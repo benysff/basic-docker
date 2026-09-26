@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Basic Docker</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%232563eb'/><rect x='7' y='15' width='8' height='8' rx='1.5' fill='white'/><rect x='17' y='15' width='8' height='8' rx='1.5' fill='white'/><rect x='12' y='6' width='8' height='8' rx='1.5' fill='white' opacity='.75'/></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <div class="logo" aria-hidden="true">
+        <svg viewBox="0 0 32 32"><rect x="7" y="15" width="8" height="8" rx="1.5"/><rect x="17" y="15" width="8" height="8" rx="1.5"/><rect x="12" y="6" width="8" height="8" rx="1.5" opacity=".7"/></svg>
+      </div>
+      <div>
+        <h1>Basic Docker</h1>
+        <p class="sub">Uygulamalarını tek tuşla aç, tek tuşla kapat.</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <span id="docker-pill" class="pill" title="Docker durumu"><span class="dot"></span><span>Bağlanıyor…</span></span>
+      <button id="btn-help" class="btn ghost" type="button"></button>
+      <button id="btn-new" class="btn primary" type="button"></button>
+    </div>
+  </header>
+
+  <main>
+    <section id="intro" class="intro" hidden>
+      <div>
+        <h2>Nasıl çalışır?</h2>
+        <p>Her kart bir <b>uygulama</b>. Bir uygulama, birlikte çalışan birkaç <b>parçadan</b> (konteyner) oluşur.
+          Örneğin bir web sitesi = site + veritabanı + e-posta kutusu. <b>Başlat</b>'a basınca hepsi birlikte açılır,
+          <b>Durdur</b>'a basınca hepsi kapanır. Parçaları görmek için karta tıkla.</p>
+      </div>
+      <button id="intro-close" class="icon-btn" type="button" aria-label="Kapat"></button>
+    </section>
+
+    <div class="toolbar">
+      <div id="summary" class="summary"></div>
+      <label class="search">
+        <span class="sr">Ara</span>
+        <input id="search" type="search" placeholder="Uygulama ara…" autocomplete="off">
+      </label>
+    </div>
+
+    <div id="apps" class="grid" aria-live="polite"></div>
+    <div id="state-screen" class="state-screen" hidden></div>
+  </main>
+
+  <div id="scrim" class="scrim" hidden></div>
+  <aside id="drawer" class="drawer" aria-hidden="true" tabindex="-1"></aside>
+
+  <dialog id="modal" class="modal"><div id="modal-body"></div></dialog>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
