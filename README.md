@@ -1,6 +1,6 @@
 # Basic Docker
 
-**Docker'ı mala anlatır gibi yöneten macOS uygulaması.**
+**Docker'ı mala anlatır gibi yöneten, Mac'e özel (native) uygulama.**
 5 konteynerli bir proje ekranda tek kart olarak görünür. Tek tuşla hepsi açılır, tek tuşla hepsi kapanır.
 
 ![Basic Docker ana ekran](docs/ana.png)
@@ -89,9 +89,6 @@ Ayarlar (görünen adlar, notlar, elle gruplamalar) `~/.basic-docker/ayarlar.jso
 ```
 
 Yeni bir hazır parça eklemek için `catalog.py`'ye bir kayıt eklemen yeterli.
-
-Linux ve Windows'ta pywebview çalıştığı için `pip install pywebview && python app.py` ile açılması beklenir,
-ancak şimdilik yalnızca macOS'ta test edildi. Klasör açma ve terminal gibi birkaç özellik macOS'a özel.
 
 ## Lisans
 
