@@ -14,8 +14,9 @@ const NetworksView = {
       <div class="page">
         ${pageHead({
           title: T("network", true),
-          desc: "Aynı ağdaki parçalar birbirine adıyla ulaşır (ör. postgres://db:5432). Farklı ağdakiler birbirini göremez.",
-          actions: html`<button class="btn primary" data-create>${icon("plus")}${T("network")} oluştur</button>`,
+          desc: L("Aynı ağdaki parçalar birbirine adıyla ulaşır (ör. postgres://db:5432). Farklı ağdakiler birbirini göremez.",
+            "Containers on the same network reach each other by name (e.g. postgres://db:5432). Containers on different networks can't see each other."),
+          actions: html`<button class="btn primary" data-create>${icon("plus")}${L(`${T("network")} oluştur`, "Create network")}</button>`,
         })}
         <div id="nw-body">${skeletonRows(6)}</div>
       </div>`);
@@ -50,26 +51,27 @@ const NetworksView = {
 
   async create() {
     const name = await promptDialog({
-      title: `Yeni ${Tl("network")}`, label: "Ad", placeholder: "proje-agi", confirmText: "Oluştur",
-      help: "Aynı ağa bağladığın parçalar birbirini adıyla bulur.",
-      validate: (v) => (/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(v) ? "" : "Geçerli bir ad yaz."),
+      title: L(`Yeni ${Tl("network")}`, "New network"), label: L("Ad", "Name"), placeholder: L("proje-agi", "project-net"), confirmText: L("Oluştur", "Create"),
+      help: L("Aynı ağa bağladığın parçalar birbirini adıyla bulur.", "Containers you connect to the same network find each other by name."),
+      validate: (v) => (/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(v) ? "" : L("Geçerli bir ad yaz.", "Enter a valid name.")),
     });
     if (!name) return;
-    try { await api("/api/ag/olustur", { ad: name }); flash(`${name} oluşturuldu`); this.load(); } catch (e) { flash(e.message, true); }
+    try { await api("/api/ag/olustur", { ad: name }); flash(L(`${name} oluşturuldu`, `${name} created`)); this.load(); } catch (e) { flash(e.message, true); }
   },
 
   async remove(n) {
-    const r = await confirmDialog({ title: `${n.name} silinsin mi?`, danger: true, confirmText: "Sil", icon: "trash",
-      text: n.containers.length ? "Bu ağa bağlı parçalar var; önce onları çıkarman gerekir." : "Ağ silinir. Parçalara ve verilere dokunulmaz." });
+    const r = await confirmDialog({ title: L(`${n.name} silinsin mi?`, `Delete ${n.name}?`), danger: true, confirmText: L("Sil", "Delete"), icon: "trash",
+      text: n.containers.length ? L("Bu ağa bağlı parçalar var; önce onları çıkarman gerekir.", "Containers are connected to this network; disconnect them first.")
+        : L("Ağ silinir. Parçalara ve verilere dokunulmaz.", "The network is deleted. Containers and data are not touched.") });
     if (!r) return;
-    try { await api("/api/ag/sil", { ad: n.name }); flash("Ağ silindi"); this.load(); } catch (e) { flash(e.message, true); }
+    try { await api("/api/ag/sil", { ad: n.name }); flash(L("Ağ silindi", "Network deleted")); this.load(); } catch (e) { flash(e.message, true); }
   },
 
   async disconnect(n, member) {
-    const r = await confirmDialog({ title: `${member} bu ağdan çıkarılsın mı?`, confirmText: "Çıkar", icon: "unlink",
-      text: `${member}, ${n.name} ağındaki diğer parçalara artık adıyla ulaşamaz.` });
+    const r = await confirmDialog({ title: L(`${member} bu ağdan çıkarılsın mı?`, `Disconnect ${member} from this network?`), confirmText: L("Çıkar", "Disconnect"), icon: "unlink",
+      text: L(`${member}, ${n.name} ağındaki diğer parçalara artık adıyla ulaşamaz.`, `${member} will no longer reach the other containers on ${n.name} by name.`) });
     if (!r) return;
-    try { await api("/api/ag/bagla", { ag: n.name, parca: member, bagla: false }); flash("Çıkarıldı"); this.load(); } catch (e) { flash(e.message, true); }
+    try { await api("/api/ag/bagla", { ag: n.name, parca: member, bagla: false }); flash(L("Çıkarıldı", "Disconnected")); this.load(); } catch (e) { flash(e.message, true); }
   },
 
   card(n) {
@@ -79,11 +81,11 @@ const NetworksView = {
           <div class="kind-tile sm ${n.containers.some((m) => m.running) ? "lvl-ok" : ""}">${icon("network")}</div>
           <div class="min0 grow">
             <div class="strong mono ellipsis" title="${n.name}">${n.name}</div>
-            <div class="muted small">${n.app_name ? html`${findApp(n.app) ? html`<a href="${link(`/uygulama/${n.app}`)}">${n.app_name}</a>` : n.app_name} · ` : ""}${n.driver}${n.subnet ? html` · <span class="mono">${n.subnet}</span>` : ""}${n.internal ? " · internete kapalı" : ""}</div>
+            <div class="muted small">${n.app_name ? html`${findApp(n.app) ? html`<a href="${link(`/uygulama/${n.app}`)}">${n.app_name}</a>` : n.app_name} · ` : ""}${n.driver}${n.subnet ? html` · <span class="mono">${n.subnet}</span>` : ""}${n.internal ? L(" · internete kapalı", " · no internet") : ""}</div>
           </div>
           <div class="row-actions">
-            ${n.name !== "host" && n.name !== "none" ? html`<button class="icon-btn sm" data-net="connect" data-name="${n.name}" aria-label="Parça bağla" title="Parça bağla">${icon("link")}</button>` : ""}
-            ${n.builtin ? "" : html`<button class="icon-btn sm" data-net="delete" data-name="${n.name}" aria-label="Sil" title="Sil">${icon("trash")}</button>`}
+            ${n.name !== "host" && n.name !== "none" ? html`<button class="icon-btn sm" data-net="connect" data-name="${n.name}" aria-label="${L("Parça bağla", "Connect a container")}" title="${L("Parça bağla", "Connect a container")}">${icon("link")}</button>` : ""}
+            ${n.builtin ? "" : html`<button class="icon-btn sm" data-net="delete" data-name="${n.name}" aria-label="${L("Sil", "Delete")}" title="${L("Sil", "Delete")}">${icon("trash")}</button>`}
           </div>
         </header>
         ${n.desc ? html`<p class="muted small">${n.desc}</p>` : ""}
@@ -93,9 +95,9 @@ const NetworksView = {
             ${findContainer(m.id) ? html`<a class="ellipsis" href="${link(`/parca/${m.id}`)}">${m.role ? shortRole(m.role) : m.name}</a>` : html`<span class="ellipsis">${m.name}</span>`}
             <span class="mono muted small ellipsis">${m.name}</span>
             <span class="mono small">${m.ip}</span>
-            <button class="icon-btn xs" data-net="disconnect" data-name="${n.name}" data-member="${m.name}" aria-label="${m.name} ağdan çıkar" title="Ağdan çıkar">${icon("close")}</button>
+            <button class="icon-btn xs" data-net="disconnect" data-name="${n.name}" data-member="${m.name}" aria-label="${L(`${m.name} ağdan çıkar`, `Disconnect ${m.name}`)}" title="${L("Ağdan çıkar", "Disconnect")}">${icon("close")}</button>
           </li>`)}</ul>`
-          : html`<p class="muted small">Şu an bağlı çalışan ${Tl("container")} yok.${n.builtin ? "" : " Kullanılmıyorsa silebilirsin."}</p>`}
+          : html`<p class="muted small">${L(`Şu an bağlı çalışan ${Tl("container")} yok.`, "No running containers are connected right now.")}${n.builtin ? "" : L(" Kullanılmıyorsa silebilirsin.", " You can delete it if it's not used.")}</p>`}
       </article>`;
   },
 
@@ -108,11 +110,13 @@ const NetworksView = {
     const active = custom.filter((n) => n.containers.length);
     const idle = custom.filter((n) => !n.containers.length);
     patch(body, html`
-      ${callout({ level: "tip", title: "Ağ neden önemli?", text: raw(`Bir parçanın içinden <code>localhost</code> yazarsan o parçanın kendisine gidersin. Diğer parçaya ulaşmak için aynı ağda olmalı ve onun <b>adını</b> kullanmalısın (ör. <code>db</code>, <code>redis</code>). Bir parçanın hangi adlarla bulunabildiği, parça sayfasındaki “Ağ ve adresler” kutusunda yazar.`) })}
-      ${active.length ? html`<section class="section"><h2 class="section-title">Kullanımda <span>${active.length}</span></h2><div class="net-grid">${active.map((n) => this.card(n))}</div></section>` : ""}
-      ${idle.length ? html`<section class="section"><h2 class="section-title">Şu an boş <span>${idle.length}</span>${hintIcon("Bu ağlara bağlı çalışan parça yok. Genelde kapalı projelere aittir; proje başlayınca yeniden dolar.")}</h2><div class="net-grid">${idle.map((n) => this.card(n))}</div></section>` : ""}
+      ${callout({ level: "tip", title: L("Ağ neden önemli?", "Why do networks matter?"), text: isEN()
+        ? raw("If you type <code>localhost</code> inside a container, you reach that container itself. To reach another container it must be on the same network and you must use its <b>name</b> (e.g. <code>db</code>, <code>redis</code>). The names a container can be found by are listed in the “Network and addresses” box on its page.")
+        : raw(`Bir parçanın içinden <code>localhost</code> yazarsan o parçanın kendisine gidersin. Diğer parçaya ulaşmak için aynı ağda olmalı ve onun <b>adını</b> kullanmalısın (ör. <code>db</code>, <code>redis</code>). Bir parçanın hangi adlarla bulunabildiği, parça sayfasındaki “Ağ ve adresler” kutusunda yazar.`) })}
+      ${active.length ? html`<section class="section"><h2 class="section-title">${L("Kullanımda", "In use")} <span>${active.length}</span></h2><div class="net-grid">${active.map((n) => this.card(n))}</div></section>` : ""}
+      ${idle.length ? html`<section class="section"><h2 class="section-title">${L("Şu an boş", "Empty right now")} <span>${idle.length}</span>${hintIcon(L("Bu ağlara bağlı çalışan parça yok. Genelde kapalı projelere aittir; proje başlayınca yeniden dolar.", "No running containers are connected to these. They usually belong to stopped projects and fill up again when the project starts."))}</h2><div class="net-grid">${idle.map((n) => this.card(n))}</div></section>` : ""}
       <section class="section">
-        <button class="section-title toggle" data-toggle-builtin aria-expanded="${this.showBuiltin}">${icon(this.showBuiltin ? "chevronDown" : "chevronRight")}Docker'ın kendi ağları <span>${builtin.length}</span></button>
+        <button class="section-title toggle" data-toggle-builtin aria-expanded="${this.showBuiltin}">${icon(this.showBuiltin ? "chevronDown" : "chevronRight")}${L("Docker'ın kendi ağları", "Docker's built-in networks")} <span>${builtin.length}</span></button>
         ${this.showBuiltin ? html`<div class="net-grid">${builtin.map((n) => this.card(n))}</div>` : ""}
       </section>`);
   },

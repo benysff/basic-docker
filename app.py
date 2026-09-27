@@ -62,6 +62,7 @@ UI_PREFS = {
     "bildirim": bool,
     "gorunum": ("kart", "liste"),
     "kenar_dar": bool,
+    "lang": ("tr", "en"),
 }
 
 
@@ -128,7 +129,7 @@ def api_create(p):
     elif kind == "compose":
         job = ds.create_from_compose(_s(p, "yol"), _s(p, "proje"), _s(p, "ad"))
     else:
-        raise ds.UserError("Bilinmeyen oluşturma türü.")
+        raise ds.UserError(ds.L("Bilinmeyen oluşturma türü.", "Unknown create type."))
     return _job(job)
 
 
@@ -142,9 +143,12 @@ def api_diagnose(p):
         host = rs.host_arch()
         if code == 0 and arch and host and arch != host:
             arch_warning = {
-                "id": "emulated", "title": f"Kalıp {arch} işlemci için; Mac'in {host}",
-                "desc": "Parça emülasyonla (Rosetta/QEMU) çalışıyor. Çalışabilir ama yavaştır; bazı programlar hiç açılmaz.",
-                "fix": f"Kalıbın {host} sürümü varsa onu kullan.", "link": None, "line": "", "line_no": 0,
+                "id": "emulated",
+                "title": ds.L(f"Kalıp {arch} işlemci için; Mac'in {host}", f"The image is for {arch}; your Mac is {host}"),
+                "desc": ds.L("Parça emülasyonla (Rosetta/QEMU) çalışıyor. Çalışabilir ama yavaştır; bazı programlar hiç açılmaz.",
+                             "The container runs under emulation (Rosetta/QEMU). It may work but is slow; some programs won't start."),
+                "fix": ds.L(f"Kalıbın {host} sürümü varsa onu kullan.", f"Use the {host} version of the image if there is one."),
+                "link": None, "line": "", "line_no": 0,
             }
     return {"teshis": insights.diagnose(c, text, arch_warning)}
 
@@ -173,6 +177,8 @@ def api_prefs_set(p):
         elif isinstance(rule, tuple) and v in rule:
             clean[k] = v
     ds.update_settings(lambda s: s["arayuz"].update(clean))
+    if "lang" in clean:
+        ds.set_lang(clean["lang"])
     return {"tamam": True}
 
 
@@ -198,7 +204,7 @@ def api_choose_file(p):
 def api_open_link(p):
     url = _s(p, "url")
     if urlparse(url).scheme not in ("http", "https"):
-        raise ds.UserError("Geçersiz bağlantı.")
+        raise ds.UserError(ds.L("Geçersiz bağlantı.", "Invalid link."))
     webbrowser.open(url)
     return {"tamam": True}
 
@@ -310,14 +316,14 @@ class Bridge:
             params.update(body)
         route = ROUTES.get(parsed.path)
         if not route:
-            return {"ok": False, "hata": "Bilinmeyen işlem."}
+            return {"ok": False, "hata": ds.L("Bilinmeyen işlem.", "Unknown action.")}
         try:
             return {"ok": True, "veri": route(params)}
         except ds.UserError as e:
             return {"ok": False, "hata": str(e)}
         except Exception as e:
             traceback.print_exc()
-            return {"ok": False, "hata": f"Beklenmeyen hata: {e}"}
+            return {"ok": False, "hata": ds.L(f"Beklenmeyen hata: {e}", f"Unexpected error: {e}")}
 
 
 def mac_identity():

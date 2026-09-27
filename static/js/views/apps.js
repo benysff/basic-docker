@@ -5,20 +5,21 @@
    ===================================================================== */
 
 const SOURCE_TEXT = {
-  compose: "Docker Compose projesi",
-  basicdocker: "Basic Docker ile kuruldu",
-  manual: "Elle gruplandı",
-  single: "Tek başına duran parça",
-  system: "Docker'ın kendi yardımcı parçaları",
+  compose: ["Docker Compose projesi", "Docker Compose project"],
+  basicdocker: ["Basic Docker ile kuruldu", "Created with Basic Docker"],
+  manual: ["Elle gruplandı", "Grouped by hand"],
+  single: ["Tek başına duran parça", "Standalone container"],
+  system: ["Docker'ın kendi yardımcı parçaları", "Docker's own helper containers"],
 };
+const sourceText = (src) => (SOURCE_TEXT[src] ? L(...SOURCE_TEXT[src]) : "");
 
 // ---------- Uygulama işlemleri (kart, liste ve ayrıntı sayfası ortak) ----------
 function appMainButton(a, size = "") {
   const job = activeJob(a.key);
-  if (job) return html`<button class="btn ${size}" disabled><span class="spinner"></span>Bekle…</button>`;
+  if (job) return html`<button class="btn ${size}" disabled><span class="spinner"></span>${L("Bekle…", "Wait…")}</button>`;
   if (a.total === 0 && !a.compose?.exists) return "";
-  if (a.up > 0) return html`<button class="btn ${size} stop" data-app-act="durdur" data-key="${a.key}">${icon("stop")}Durdur</button>`;
-  return html`<button class="btn ${size} go" data-app-act="baslat" data-key="${a.key}">${icon("play")}Başlat</button>`;
+  if (a.up > 0) return html`<button class="btn ${size} stop" data-app-act="durdur" data-key="${a.key}">${icon("stop")}${L("Durdur", "Stop")}</button>`;
+  return html`<button class="btn ${size} go" data-app-act="baslat" data-key="${a.key}">${icon("play")}${L("Başlat", "Start")}</button>`;
 }
 
 function appMenuItems(a) {
@@ -26,20 +27,20 @@ function appMenuItems(a) {
   const hasConn = a.containers.some((c) => c.connection);
   const compose = a.compose?.exists;
   return [
-    { label: "Ayrıntıları aç", icon: "arrowRight", onClick: () => Router.go(`/uygulama/${encodeURIComponent(a.key)}`) },
+    { label: L("Ayrıntıları aç", "Open details"), icon: "arrowRight", onClick: () => Router.go(`/uygulama/${encodeURIComponent(a.key)}`) },
     "-",
-    a.up > 0 && { label: "Yeniden başlat", icon: "restart", disabled: !!job, onClick: () => appAction(a.key, "yeniden") },
-    a.state === "partial" && { label: "Kapalı olanları da başlat", icon: "play", disabled: !!job, onClick: () => appAction(a.key, "baslat") },
-    compose && { label: "Güncelle (yeni sürümleri indir)", icon: "update", disabled: !!job, onClick: () => appAction(a.key, "guncelle") },
-    compose && { label: "Kodu yeniden derle", icon: "hammer", disabled: !!job, onClick: () => appAction(a.key, "derle") },
+    a.up > 0 && { label: L("Yeniden başlat", "Restart"), icon: "restart", disabled: !!job, onClick: () => appAction(a.key, "yeniden") },
+    a.state === "partial" && { label: L("Kapalı olanları da başlat", "Start the stopped ones too"), icon: "play", disabled: !!job, onClick: () => appAction(a.key, "baslat") },
+    compose && { label: L("Güncelle (yeni sürümleri indir)", "Update (pull new versions)"), icon: "update", disabled: !!job, onClick: () => appAction(a.key, "guncelle") },
+    compose && { label: L("Kodu yeniden derle", "Rebuild the code"), icon: "hammer", disabled: !!job, onClick: () => appAction(a.key, "derle") },
     "-",
     { label: `${T("logs")}`, icon: "logs", onClick: () => Router.go(`/uygulama/${encodeURIComponent(a.key)}/kayitlar`) },
-    hasConn && { label: "Bağlantı bilgilerini .env olarak kopyala", icon: "key", onClick: () => copyAppEnv(a.key) },
-    compose && a.compose.dir && { label: "Proje klasörünü aç", icon: "folder", onClick: () => api("/api/klasor-ac", { key: a.key }).catch((e) => flash(e.message, true)) },
-    isGroupApp(a) && { label: `${T("container")} ekle`, icon: "plus", onClick: () => openNew("sablonlar", { app: a.key }) },
-    { label: "Bir sete ekle", icon: "rocket", onClick: () => openSetEditor(null, [a.key]) },
+    hasConn && { label: L("Bağlantı bilgilerini .env olarak kopyala", "Copy connection details as .env"), icon: "key", onClick: () => copyAppEnv(a.key) },
+    compose && a.compose.dir && { label: L("Proje klasörünü aç", "Open project folder"), icon: "folder", onClick: () => api("/api/klasor-ac", { key: a.key }).catch((e) => flash(e.message, true)) },
+    isGroupApp(a) && { label: L(`${T("container")} ekle`, "Add a container"), icon: "plus", onClick: () => openNew("sablonlar", { app: a.key }) },
+    { label: L("Bir sete ekle", "Add to a set"), icon: "rocket", onClick: () => openSetEditor(null, [a.key]) },
     "-",
-    { label: a.total ? "Sil…" : "Listeden kaldır…", icon: "trash", danger: true, disabled: !!job, onClick: () => confirmDeleteApp(a) },
+    { label: a.total ? L("Sil…", "Delete…") : L("Listeden kaldır…", "Remove from list…"), icon: "trash", danger: true, disabled: !!job, onClick: () => confirmDeleteApp(a) },
   ];
 }
 
@@ -49,9 +50,10 @@ async function appAction(key, act) {
   if (act === "sil") return confirmDeleteApp(a);
   if (act === "derle") {
     const r = await confirmDialog({
-      title: "Kod yeniden derlensin mi?",
-      text: "Projedeki Dockerfile'lar baştan derlenir ve bütün parçalar yeniden oluşturulur. Verilerin (veri kutuları) korunur. Birkaç dakika sürebilir.",
-      confirmText: "Derle ve başlat", icon: "hammer",
+      title: L("Kod yeniden derlensin mi?", "Rebuild the code?"),
+      text: L("Projedeki Dockerfile'lar baştan derlenir ve bütün parçalar yeniden oluşturulur. Verilerin (veri kutuları) korunur. Birkaç dakika sürebilir.",
+        "The project's Dockerfiles are built from scratch and every container is recreated. Your data (volumes) is kept. This can take a few minutes."),
+      confirmText: L("Derle ve başlat", "Rebuild and start"), icon: "hammer",
     });
     if (!r) return;
   }
@@ -61,7 +63,7 @@ async function appAction(key, act) {
 async function copyAppEnv(key) {
   try {
     const r = await api(`/api/uygulama/env${q({ key })}`);
-    copyText(r.metin, ".env satırları kopyalandı");
+    copyText(r.metin, L(".env satırları kopyalandı", ".env lines copied"));
   } catch (e) { flash(e.message, true); }
 }
 
@@ -76,7 +78,7 @@ function appUsage(a) {
 
 function matchesApp(a, qq) {
   const hay = [a.name, a.key, a.summary, a.note, ...a.containers.flatMap((c) => [c.name, c.image, c.role_title])]
-    .join(" ").toLocaleLowerCase("tr");
+    .join(" ").toLocaleLowerCase(loc());
   return hay.includes(qq);
 }
 
@@ -93,18 +95,19 @@ const AppsView = {
       <div class="page">
         ${pageHead({
           title: T("app", true),
-          desc: "Her kart bir uygulama: birlikte çalışan parçaların grubu. Tek tuşla aç, tek tuşla kapat.",
-          actions: html`<button class="btn primary" data-global="yeni" title="Yeni ekle (⌘N)">${icon("plus")}Yeni ekle</button>`,
+          desc: L("Her kart bir uygulama: birlikte çalışan parçaların grubu. Tek tuşla aç, tek tuşla kapat.",
+            "Each card is an app: a group of containers that work together. Start and stop them with one click."),
+          actions: html`<button class="btn primary" data-global="yeni" title="${L("Yeni ekle (⌘N)", "Add new (⌘N)")}">${icon("plus")}${L("Yeni ekle", "Add new")}</button>`,
         })}
         <div id="apps-intro"></div>
-        <section class="stat-row" id="apps-stats" aria-label="Özet"></section>
+        <section class="stat-row" id="apps-stats" aria-label="${L("Özet", "Summary")}"></section>
         <div class="toolbar">
-          ${searchBox("apps-search", `${T("app")} ya da ${Tl("container")} ara…`, this.query)}
+          ${searchBox("apps-search", L(`${T("app")} ya da ${Tl("container")} ara…`, "Search apps or containers…"), this.query)}
           <div id="apps-filter"></div>
           <div class="toolbar-spacer"></div>
           ${segmented("gorunum", [
-            { id: "kart", icon: "grid", title: "Kart görünümü" },
-            { id: "liste", icon: "list", title: "Liste görünümü" },
+            { id: "kart", icon: "grid", title: L("Kart görünümü", "Card view") },
+            { id: "liste", icon: "list", title: L("Liste görünümü", "List view") },
           ], mode)}
         </div>
         <div id="apps-body" aria-live="polite">${skeletonCards(6)}</div>
@@ -191,12 +194,15 @@ const AppsView = {
       <div class="intro">
         <div class="intro-art" aria-hidden="true">${icon("grid")}</div>
         <div class="intro-text">
-          <h2>Nasıl çalışır?</h2>
-          <p>Her kart bir <b>uygulama</b>. Bir uygulama, birlikte çalışan birkaç <b>parçadan</b> (konteyner) oluşur.
+          <h2>${L("Nasıl çalışır?", "How does it work?")}</h2>
+          ${isEN() ? html`<p>Each card is an <b>app</b>. An app is made of a few <b>containers</b> that work together.
+            For example, a website = site + database + mailbox. Press <b>Start</b> and they all start together;
+            press <b>Stop</b> and they all stop. Click a card for details. Press <b>⌘K</b> to search anywhere.</p>`
+          : html`<p>Her kart bir <b>uygulama</b>. Bir uygulama, birlikte çalışan birkaç <b>parçadan</b> (konteyner) oluşur.
             Örneğin bir web sitesi = site + veritabanı + e-posta kutusu. <b>Başlat</b>'a basınca hepsi birlikte açılır,
-            <b>Durdur</b>'a basınca hepsi kapanır. Ayrıntılar için karta tıkla. Her yerde arama için <b>⌘K</b>.</p>
+            <b>Durdur</b>'a basınca hepsi kapanır. Ayrıntılar için karta tıkla. Her yerde arama için <b>⌘K</b>.</p>`}
         </div>
-        <button class="icon-btn" data-intro-close aria-label="Tanıtımı kapat" title="Kapat">${icon("close")}</button>
+        <button class="icon-btn" data-intro-close aria-label="${L("Tanıtımı kapat", "Hide intro")}" title="${L("Kapat", "Close")}">${icon("close")}</button>
       </div>`);
 
     // Özet kutuları
@@ -210,34 +216,34 @@ const AppsView = {
     const problems = counts.sorunlu + (S.badges.conflicts || 0);
     patch($("#apps-stats", this.root), html`
       <button class="stat" data-stat-filter="calisan">
-        <div class="stat-label">${icon("play")}Çalışan</div>
-        <div class="stat-value">${counts.calisan}<small>/ ${counts.hepsi} ${Tl("app")}</small></div>
-        <div class="stat-foot">${plural(allContainers().filter((c) => c.running && c.app.source !== "system").length, Tl("container"))} açık</div>
+        <div class="stat-label">${icon("play")}${L("Çalışan", "Running")}</div>
+        <div class="stat-value">${counts.calisan}<small>/ ${plural(counts.hepsi, Tl("app"))}</small></div>
+        <div class="stat-foot">${plural(allContainers().filter((c) => c.running && c.app.source !== "system").length, Tl("container"))} ${L("açık", "up")}</div>
       </button>
       <div class="stat">
-        <div class="stat-label">${icon("cpu")}İşlemci</div>
+        <div class="stat-label">${icon("cpu")}${L("İşlemci", "CPU")}</div>
         <div class="stat-value">${have ? fmt.pct(cpu) : "—"}</div>
         ${sparkline(cpuHist, { w: 160, h: 28, cls: "accent" })}
       </div>
       <div class="stat">
-        <div class="stat-label">${icon("memory")}Bellek</div>
+        <div class="stat-label">${icon("memory")}${L("Bellek", "Memory")}</div>
         <div class="stat-value">${have ? fmt.bytes(mem) : "—"}${limit ? html`<small>/ ${fmt.bytes(limit, 0)}</small>` : ""}</div>
         ${limit ? meter((mem / limit) * 100) : sparkline(memHist, { w: 160, h: 28 })}
       </div>
       <button class="stat ${problems ? "attention" : ""}" data-stat-filter="sorunlu">
-        <div class="stat-label">${icon(problems ? "alert" : "checkCircle")}Dikkat</div>
-        <div class="stat-value">${problems || "Yok"}</div>
-        <div class="stat-foot">${problems ? "sorunlu uygulama ya da kapı çakışması" : "Her şey yolunda görünüyor"}</div>
+        <div class="stat-label">${icon(problems ? "alert" : "checkCircle")}${L("Dikkat", "Attention")}</div>
+        <div class="stat-value">${problems || L("Yok", "None")}</div>
+        <div class="stat-foot">${problems ? L("sorunlu uygulama ya da kapı çakışması", "app problems or port conflicts") : L("Her şey yolunda görünüyor", "Everything looks fine")}</div>
       </button>`);
 
     patch($("#apps-filter", this.root), segmented("durum", [
-      { id: "hepsi", label: "Tümü", count: counts.hepsi },
-      { id: "calisan", label: "Çalışan", count: counts.calisan },
-      { id: "kapali", label: "Kapalı", count: counts.kapali },
-      { id: "sorunlu", label: "Sorunlu", count: counts.sorunlu },
+      { id: "hepsi", label: L("Tümü", "All"), count: counts.hepsi },
+      { id: "calisan", label: L("Çalışan", "Running"), count: counts.calisan },
+      { id: "kapali", label: L("Kapalı", "Stopped"), count: counts.kapali },
+      { id: "sorunlu", label: L("Sorunlu", "Problems"), count: counts.sorunlu },
     ], this.filter));
 
-    const qq = this.query.trim().toLocaleLowerCase("tr");
+    const qq = this.query.trim().toLocaleLowerCase(loc());
     let list = all;
     if (qq) list = list.filter((a) => matchesApp(a, qq));
     if (this.filter === "calisan") list = list.filter((a) => a.running > 0);
@@ -247,15 +253,17 @@ const AppsView = {
     const body = $("#apps-body", this.root);
     if (!all.length) {
       return patch(body, emptyState({
-        icon: "grid", title: `Henüz hiç ${Tl("app")} yok`,
-        text: "Hazır bir veritabanı kurabilir ya da docker-compose.yml olan proje klasörünü ekleyebilirsin.",
-        action: html`<button class="btn primary" data-global="yeni">${icon("plus")}Yeni ekle</button>`,
+        icon: "grid", title: L(`Henüz hiç ${Tl("app")} yok`, "No apps yet"),
+        text: L("Hazır bir veritabanı kurabilir ya da docker-compose.yml olan proje klasörünü ekleyebilirsin.",
+          "Install a ready-made database or add a project folder that has a docker-compose.yml."),
+        action: html`<button class="btn primary" data-global="yeni">${icon("plus")}${L("Yeni ekle", "Add new")}</button>`,
       }));
     }
     if (!list.length) {
       return patch(body, emptyState({
-        icon: "search", title: "Eşleşen bir şey yok",
-        text: qq ? `“${this.query}” ile eşleşen ${Tl("app")} bulunamadı.` : "Bu filtrede gösterilecek uygulama yok.",
+        icon: "search", title: L("Eşleşen bir şey yok", "Nothing matches"),
+        text: qq ? L(`“${this.query}” ile eşleşen ${Tl("app")} bulunamadı.`, `No app matches “${this.query}”.`)
+          : L("Bu filtrede gösterilecek uygulama yok.", "No apps for this filter."),
         compact: true,
       }));
     }
@@ -273,14 +281,15 @@ const AppsView = {
         </section>` : ""}
       ${groups.single.length ? html`
         <section class="section">
-          <h2 class="section-title">Tek başına duran ${Tl("container", true)} <span>${groups.single.length}</span>
-            ${hintIcon("Bir projeye bağlı olmayan, tek komutla (docker run) açılmış parçalar. Ayrıntılardaki 'Uygulamaya ekle' ile bir karta toplayabilirsin.")}</h2>
+          <h2 class="section-title">${L(`Tek başına duran ${Tl("container", true)}`, "Standalone containers")} <span>${groups.single.length}</span>
+            ${hintIcon(L("Bir projeye bağlı olmayan, tek komutla (docker run) açılmış parçalar. Ayrıntılardaki 'Uygulamaya ekle' ile bir karta toplayabilirsin.",
+              "Containers started with a single command (docker run) that don't belong to a project. Use 'Add to an app' in the details to group them into a card."))}</h2>
           ${block(groups.single)}
         </section>` : ""}
       ${groups.system.length ? html`
         <section class="section">
           <button class="section-title toggle" data-toggle-system aria-expanded="${this.showSystem}">
-            ${icon(this.showSystem ? "chevronDown" : "chevronRight")}Docker'ın yardımcıları <span>${groups.system.reduce((n, a) => n + a.total, 0)}</span>
+            ${icon(this.showSystem ? "chevronDown" : "chevronRight")}${L("Docker'ın yardımcıları", "Docker helpers")} <span>${groups.system.reduce((n, a) => n + a.total, 0)}</span>
           </button>
           ${this.showSystem ? block(groups.system) : ""}
         </section>` : ""}`);
@@ -295,7 +304,7 @@ const AppsView = {
       : html`<div class="part-pills">${a.containers.slice(0, 6).map((c) => html`
           <span class="part-pill lvl-${containerLevel(c)}" title="${c.role_title} (${c.name}) — ${c.status_text}">${icon(c.kind)}<span>${pillLabel(c, a)}</span></span>`)}
           ${a.containers.length > 6 ? html`<span class="part-pill more">+${a.containers.length - 6}</span>` : ""}
-          ${a.total === 0 ? html`<span class="muted small">${T("container")} yok — Başlat'a basınca yeniden kurulur</span>` : ""}
+          ${a.total === 0 ? html`<span class="muted small">${L(`${T("container")} yok — Başlat'a basınca yeniden kurulur`, "No containers — press Start to recreate them")}</span>` : ""}
         </div>`;
     const links = [...a.links].sort((x, y) => y.running - x.running).slice(0, 3);
     return html`
@@ -309,12 +318,12 @@ const AppsView = {
           ${appMainButton(a, "sm")}
         </div>
         ${parts}
-        ${links.length ? html`<div class="chips">${links.map((l) => linkChip(l.url, l.label, { dim: !l.running, title: `${l.role} — tarayıcıda aç` }))}</div>` : ""}
+        ${links.length ? html`<div class="chips">${links.map((l) => linkChip(l.url, l.label, { dim: !l.running, title: `${l.role} — ${L("tarayıcıda aç", "open in browser")}` }))}</div>` : ""}
         ${job ? html`<div class="card-busy"><span class="spinner"></span><span>${job.last || job.title}</span></div>`
           : a.hint ? html`<div class="card-hint lvl-${a.state === "problem" ? "err" : a.state === "empty" ? "info" : "warn"}">${icon(a.state === "empty" ? "info" : "alert")}<span>${a.hint}</span></div>` : ""}
         <div class="app-card-foot">
-          <span class="usage">${usage ? html`${icon("cpu")}${fmt.pct(usage.cpu)}<span class="sep-dot"></span>${icon("memory")}${fmt.bytes(usage.mem)}` : html`<span class="muted">${a.note ? a.note.slice(0, 60) : SOURCE_TEXT[a.source] || ""}</span>`}</span>
-          <button class="icon-btn sm" data-app-menu="${a.key}" aria-label="Diğer işlemler" aria-haspopup="menu" title="Diğer işlemler">${icon("more")}</button>
+          <span class="usage">${usage ? html`${icon("cpu")}${fmt.pct(usage.cpu)}<span class="sep-dot"></span>${icon("memory")}${fmt.bytes(usage.mem)}` : html`<span class="muted">${a.note ? a.note.slice(0, 60) : sourceText(a.source)}</span>`}</span>
+          <button class="icon-btn sm" data-app-menu="${a.key}" aria-label="${L("Diğer işlemler", "More actions")}" aria-haspopup="menu" title="${L("Diğer işlemler", "More actions")}">${icon("more")}</button>
         </div>
       </article>`;
   },
@@ -324,8 +333,8 @@ const AppsView = {
       <div class="table-wrap">
         <table class="table">
           <thead><tr>
-            <th>${T("app")}</th><th>Durum</th><th class="col-md">${T("container", true)}</th>
-            <th class="col-lg">Adresler</th><th class="col-md num">Kaynak</th><th class="actions-col"><span class="sr">İşlemler</span></th>
+            <th>${T("app")}</th><th>${L("Durum", "Status")}</th><th class="col-md">${T("container", true)}</th>
+            <th class="col-lg">${L("Adresler", "Addresses")}</th><th class="col-md num">${L("Kaynak", "Usage")}</th><th class="actions-col"><span class="sr">${L("İşlemler", "Actions")}</span></th>
           </tr></thead>
           <tbody>${items.map((a) => {
             const level = LEVEL_OF_APP[a.state] || "off";
@@ -334,11 +343,11 @@ const AppsView = {
             return html`
               <tr class="row-link" data-open-app="${a.key}" tabindex="0">
                 <td><div class="cell-main">${avatar(a.key, a.name, "sm")}<div><div class="strong">${a.name}</div><div class="muted small ellipsis">${a.source === "single" ? a.containers[0]?.image : a.summary}</div></div></div></td>
-                <td>${job ? html`<span class="busy-inline"><span class="spinner"></span>${job.last || "Bekle…"}</span>` : badge(level, a.state_text)}</td>
+                <td>${job ? html`<span class="busy-inline"><span class="spinner"></span>${job.last || L("Bekle…", "Wait…")}</span>` : badge(level, a.state_text)}</td>
                 <td class="col-md">${a.total ? html`<span class="mono">${a.running}/${a.total}</span>` : "—"}</td>
                 <td class="col-lg"><div class="chips">${a.links.slice(0, 2).map((l) => linkChip(l.url, l.label, { dim: !l.running }))}</div></td>
                 <td class="col-md num mono small">${usage ? html`${fmt.pct(usage.cpu)} · ${fmt.bytes(usage.mem)}` : "—"}</td>
-                <td class="actions-col"><div class="row-actions">${appMainButton(a, "sm")}<button class="icon-btn sm" data-app-menu="${a.key}" aria-label="Diğer işlemler">${icon("more")}</button></div></td>
+                <td class="actions-col"><div class="row-actions">${appMainButton(a, "sm")}<button class="icon-btn sm" data-app-menu="${a.key}" aria-label="${L("Diğer işlemler", "More actions")}">${icon("more")}</button></div></td>
               </tr>`;
           })}</tbody>
         </table>
@@ -354,7 +363,7 @@ function pillLabel(c, a) {
 }
 
 function shortRole(t) {
-  return (t || "").replace(/\s*\(.*\)$/, "").replace(/^Veritabanı$/, "Veritabanı");
+  return (t || "").replace(/\s*\(.*\)$/, "");
 }
 
 /** Birden çok parçanın geçmişini sondan hizalayıp toplar. */

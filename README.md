@@ -1,5 +1,7 @@
 # Basic Docker
 
+**Türkçe** · [English](README.en.md)
+
 **Docker'ı mala anlatır gibi yöneten, Mac'e özel (native) uygulama.**
 5 konteynerli bir proje ekranda tek kart olarak görünür. Tek tuşla hepsi açılır, tek tuşla hepsi kapanır.
 Bir şey bozulunca da **neden bozulduğunu sade Türkçeyle söyler.**
@@ -9,6 +11,7 @@ Bir şey bozulunca da **neden bozulduğunu sade Türkçeyle söyler.**
 Docker Desktop güçlü ama kalabalık. Bir projede `proje-web-1`, `proje-db-1`, `proje-redis-1`, `proje-worker-1` gibi
 isimler birikince neyin ne olduğu karışıyor. Basic Docker bunları **uygulama** olarak toplar ve her parçanın ne işe
 yaradığını sade Türkçeyle söyler. **Docker Desktop, OrbStack ve Colima** ile çalışır.
+Arayüz **Türkçe ve İngilizce**; dili Sistem sayfasından ya da ⌘K → "Switch to English" ile değiştirirsin.
 
 ## Neler yapar?
 
@@ -33,6 +36,9 @@ yaradığını sade Türkçeyle söyler. **Docker Desktop, OrbStack ve Colima** 
 - **Etkinlik geçmişi.** Docker bu geçmişi kısa tutar; Basic Docker açıkken olanları (başladı, durdu, çöktü, belleği yetmedi…) kaydeder. Bir parça beklenmedik şekilde çökerse **macOS bildirimi** gönderir.
 - **Kalıp güncelleme denetimi.** İndirdiğin kalıpların Docker Hub'da yeni sürümü var mı? Intel (amd64) için yapılmış, Mac'inde emülasyonla yavaş çalışan kalıpları da işaretler. Bir kalıbın çok sayıdaki eski sürümünü tek tuşla temizler.
 - **Sade dil ↔ teknik terimler.** "Parça, kalıp, veri kutusu" yerine istersen "konteyner, imaj, volume".
+- **Türkçe ve İngilizce.** Bütün arayüz, teşhis açıklamaları ve hazır parça listesi iki dilde.
+
+![Teşhis: parça neden kapandı?](docs/teshis.png)
 
 ### Diğer her şey
 
@@ -40,7 +46,7 @@ yaradığını sade Türkçeyle söyler. **Docker Desktop, OrbStack ve Colima** 
 - **Kalıplar:** indir, çalıştır, katmanlarını incele, sil. **Veri kutuları:** oluştur, yedekle, sil. **Ağlar:** hangi parça hangi ağda, hangi IP ve adla; oluştur, bağla, çıkar, sil.
 - **Sistem:** motor bilgisi (OrbStack / Docker Desktop / Colima), sürümler, birden fazla Docker varsa bağlam (context) değiştirme. Motor kapalıysa doğru uygulamayı (OrbStack'i ya da Docker Desktop'ı) açar.
 - **Her yerde arama: ⌘K.** Uygulama, parça, sayfa ya da işlem yaz; Enter'la yap ("blog başlat", "temizlik"…). Diğer kısayollar: ⌘N yeni ekle, ⌘1…⌘9 sayfalar, `/` arama.
-- Açık / koyu tema (macOS'u izler), dar kenar çubuğu, küçük pencerede de düzgün görünüm.
+- Açık / koyu tema (macOS'u izler), Türkçe / İngilizce arayüz, dar kenar çubuğu, küçük pencerede de düzgün görünüm.
 
 ### Yeni ekleme üç yoldan yapılır
 
@@ -72,7 +78,7 @@ Bundan sonra Launchpad'den ya da Spotlight'tan (⌘ + boşluk → *Basic Docker*
 
 **Yeni projem otomatik görünür mü?**
 `docker compose up` ile çalıştırdıysan evet, kendiliğinden tek kart olur. Konteynerleri tek tek `docker run` ile
-açtıysan ayrı kartlar olarak görünürler; ayrıntılardaki **Uygulamaya ekle** ile birleştirebilirsin.
+açtıysan ayrı kartlar olarak görünürler; ayrıntılardaki **Bir uygulamaya ekle** ile birleştirebilirsin.
 
 **`docker compose down` yaparsam kart kaybolur mu?**
 Hayır. Compose projeleri hatırlanır. Kartta Başlat'a basınca proje klasöründen yeniden kurulur.
@@ -109,7 +115,7 @@ Konteynerleri şu sırayla gruplar:
 | `docker_service.py` | Uygulamalar ve parçalar: okuma, gruplama, açıklamalar, başlat/durdur/sil/oluştur, setler |
 | `resources.py` | Kalıplar, veri kutuları, ağlar, kapı haritası, temizlik, motor bilgisi |
 | `terminal.py` | Uygulama içi terminal: `docker exec -it` oturumlarını sözde terminal (PTY) üzerinden yönetir |
-| `insights.py` | Teşhis: çıkış kodları ve kayıtlardaki bilinen hatalar → sade Türkçe açıklama |
+| `insights.py` | Teşhis: çıkış kodları ve kayıtlardaki bilinen hatalar → sade Türkçe (ya da İngilizce) açıklama |
 | `backups.py` | Veri kutusu yedeği, veritabanı dökümü ve geri yükleme |
 | `monitor.py` | Arka planda canlı kaynak kullanımı ve etkinlik geçmişi (çökme bildirimi) |
 | `catalog.py` | Hazır parça listesi |
@@ -129,6 +135,8 @@ etkinlik geçmişi `~/.basic-docker/etkinlik.jsonl` dosyasında durur.
 - Yeni bir hazır parça eklemek için `catalog.py`'ye bir kayıt eklemen yeterli.
 - Yeni bir hata açıklaması eklemek için `insights.py`'deki `PATTERNS` listesine bir satır ekle.
 - `index.html`'de andığın bütün `css/` ve `js/` dosyaları açılışta tek sayfaya gömülür; derleme adımı yok.
+- Arayüz metinleri iki dilde yazılır: JavaScript'te `L("Türkçe", "English")`, Python'da `ds.L("Türkçe", "English")`.
+  Hazır parçaların İngilizcesi `catalog.py`'de `_en` ile biten alanlarda durur.
 
 ## Lisans
 

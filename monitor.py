@@ -162,7 +162,10 @@ _last_notified = {}
 
 
 def _translate(ev):
-    """Docker olayını sade bir kayda çevirir. İlgisizse None."""
+    """Docker olayını sade bir kayda çevirir. İlgisizse None.
+
+    Kayda metin yazılmaz; metin gösterilirken seçili dilde üretilir (bkz. event_text).
+    """
     typ = ev.get("Type")
     action = ev.get("Action", "")
     actor = ev.get("Actor") or {}
@@ -173,7 +176,7 @@ def _translate(ev):
         "name": attrs.get("name", ""), "image": attrs.get("image", ""),
         "app": attrs.get("com.docker.compose.project") or attrs.get("basicdocker.app") or "",
         "service": attrs.get("com.docker.compose.service") or attrs.get("basicdocker.role") or "",
-        "level": "info", "text": "", "detail": "",
+        "level": "info",
     }
     if typ == "container" and attrs.get("basicdocker.yardimci"):
         return None  # yedekleme için kısa süreliğine açılan yardımcı parça
@@ -181,7 +184,7 @@ def _translate(ev):
         cid = rec["id"]
         if action == "kill":
             # `docker stop` sırası: kill → die → stop. Kill'i not alalım ki ardından gelen
-            # 137/143 kodlu "die" olayını çökme sanmayalım.
+            # "die" olayını çökme sanmayalım.
             _recent_stop[cid] = t
             return None
         if action not in _KEEP_CONTAINER:
@@ -189,58 +192,77 @@ def _translate(ev):
         if attrs.get("com.docker.compose.oneoff") == "True" and action in ("create", "destroy"):
             return None
         if action == "start":
-            rec.update(level="ok", text="başladı")
-        elif action == "create":
-            rec.update(text="oluşturuldu")
-        elif action == "restart":
-            rec.update(text="yeniden başlatıldı")
+            rec["level"] = "ok"
         elif action == "stop":
-            rec.update(text="durduruldu")
             _recent_stop[cid] = t
-        elif action == "pause":
-            rec.update(text="duraklatıldı")
-        elif action == "unpause":
-            rec.update(text="devam ettirildi")
-        elif action == "destroy":
-            rec.update(text="silindi")
         elif action == "rename":
-            rec.update(text=f"adı değişti ({attrs.get('oldName', '').lstrip('/')} → {rec['name']})")
+            rec["old_name"] = attrs.get("oldName", "").lstrip("/")
         elif action == "oom":
-            rec.update(level="err", text="belleği yetmediği için kapatıldı")
+            rec["level"] = "err"
         elif action.startswith("health_status"):
-            ok = action.endswith("healthy") and not action.endswith("unhealthy")
-            rec.update(level="ok" if ok else "err",
-                       text="sağlıklı" if ok else "sağlık kontrolünden geçemedi")
+            rec["level"] = "err" if action.endswith("unhealthy") else "ok"
         elif action == "die":
             try:
                 code = int(attrs.get("exitCode", "0"))
             except ValueError:
                 code = 0
             rec["exit_code"] = code
-            user_stop = 0 <= t - _recent_stop.get(cid, -1e12) < 60
-            if user_stop:
+            if 0 <= t - _recent_stop.get(cid, -1e12) < 60:
                 return None  # kullanıcı durdurdu; "durduruldu" kaydı zaten var
-            if code == 0:
-                rec.update(text="işini bitirip kapandı")
-            elif code in (137, 143):
-                rec.update(level="warn", text=f"zorla kapatıldı (kod {code})")
-            else:
-                rec.update(level="err", text=f"hata verip kapandı (kod {code})")
+            if code in (137, 143):
+                rec["level"] = "warn"
+            elif code != 0:
+                rec["level"] = "err"
         return rec
     if typ == "image":
         if action not in _KEEP_IMAGE:
             return None
         ref = attrs.get("name") or actor.get("ID", "")
-        rec.update(name=ref, image=ref,
-                   text={"pull": "kalıbı indirildi", "delete": "kalıbı silindi", "build": "kalıbı derlendi"}[action],
-                   level="ok" if action != "delete" else "info")
+        rec.update(name=ref, image=ref, level="ok" if action != "delete" else "info")
         return rec
     if typ == "volume":
         if action not in _KEEP_VOLUME:
             return None
-        rec.update(name=actor.get("ID", ""), text="veri kutusu " + ("oluşturuldu" if action == "create" else "silindi"))
+        rec["name"] = actor.get("ID", "")
         return rec
     return None
+
+
+_TEXTS = {
+    ("container", "start"): ("başladı", "started"),
+    ("container", "create"): ("oluşturuldu", "created"),
+    ("container", "restart"): ("yeniden başlatıldı", "restarted"),
+    ("container", "stop"): ("durduruldu", "stopped"),
+    ("container", "pause"): ("duraklatıldı", "paused"),
+    ("container", "unpause"): ("devam ettirildi", "resumed"),
+    ("container", "destroy"): ("silindi", "deleted"),
+    ("container", "oom"): ("belleği yetmediği için kapatıldı", "was killed: out of memory"),
+    ("container", "health_status: healthy"): ("sağlıklı", "is healthy"),
+    ("container", "health_status: unhealthy"): ("sağlık kontrolünden geçemedi", "failed its health check"),
+    ("image", "pull"): ("kalıbı indirildi", "image pulled"),
+    ("image", "delete"): ("kalıbı silindi", "image deleted"),
+    ("image", "build"): ("kalıbı derlendi", "image built"),
+    ("volume", "create"): ("veri kutusu oluşturuldu", "volume created"),
+    ("volume", "destroy"): ("veri kutusu silindi", "volume deleted"),
+}
+
+
+def event_text(rec):
+    """Kaydın seçili dildeki kısa açıklaması ("başladı", "exited with an error (code 1)"…)."""
+    L = ds.L
+    action = rec.get("action", "")
+    if rec.get("type") == "container" and action == "die":
+        code = rec.get("exit_code", 0)
+        if code == 0:
+            return L("işini bitirip kapandı", "finished and exited")
+        if code in (137, 143):
+            return L(f"zorla kapatıldı (kod {code})", f"was killed (code {code})")
+        return L(f"hata verip kapandı (kod {code})", f"exited with an error (code {code})")
+    if action == "rename":
+        old = rec.get("old_name", "")
+        return L(f"adı değişti ({old} → {rec.get('name', '')})", f"was renamed ({old} → {rec.get('name', '')})")
+    pair = _TEXTS.get((rec.get("type"), action))
+    return L(*pair) if pair else action
 
 
 def _key(rec):
@@ -315,7 +337,7 @@ def _maybe_notify(rec):
         return
     _last_notified[key] = time.time()
     who = rec["name"] or rec["id"]
-    notify("Basic Docker", f"{who} {rec['text']}")
+    notify("Basic Docker", f"{who} {event_text(rec)}")
 
 
 def _watch():
@@ -386,4 +408,7 @@ def events(days=7, limit=1500):
     with _events_lock:
         recs = [r for r in _load_events() if r.get("t", 0) >= cutoff]
     recs.sort(key=lambda r: r["t"], reverse=True)
-    return recs[:limit]
+    recs = recs[:limit]
+    for r in recs:
+        r["text"] = event_text(r)
+    return recs

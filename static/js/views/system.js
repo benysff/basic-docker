@@ -6,12 +6,12 @@
    ===================================================================== */
 
 const SHORTCUTS = [
-  ["⌘+K", "Her yerde ara / komut paleti"],
-  ["⌘+N", "Yeni ekle"],
-  ["⌘+1 … ⌘+9", "Menüdeki sayfalara git"],
-  ["/", "Sayfadaki arama kutusuna odaklan"],
-  ["⌘+[", "Geri"],
-  ["Esc", "Pencereyi / menüyü kapat"],
+  ["⌘+K", "Her yerde ara / komut paleti", "Search anywhere / command palette"],
+  ["⌘+N", "Yeni ekle", "Add new"],
+  ["⌘+1 … ⌘+9", "Menüdeki sayfalara git", "Go to menu pages"],
+  ["/", "Sayfadaki arama kutusuna odaklan", "Focus the page's search box"],
+  ["⌘+[", "Geri", "Back"],
+  ["Esc", "Pencereyi / menüyü kapat", "Close dialog / menu"],
 ];
 
 const SystemView = {
@@ -22,7 +22,7 @@ const SystemView = {
     this.error = null;
     root.innerHTML = String(html`
       <div class="page">
-        ${pageHead({ title: "Sistem ve ayarlar", desc: "Docker motoru, bağlantılar ve Basic Docker'ın tercihleri." })}
+        ${pageHead({ title: L("Sistem ve ayarlar", "System & settings"), desc: L("Docker motoru, bağlantılar ve Basic Docker'ın tercihleri.", "The Docker engine, connections and Basic Docker's preferences.") })}
         <div id="sy-body">${skeletonRows(8)}</div>
       </div>`);
     root.addEventListener("click", this.onClick = (e) => this.click(e));
@@ -50,6 +50,7 @@ const SystemView = {
     const seg = t.closest("[data-seg]");
     if (seg) {
       const k = seg.dataset.seg, v = seg.dataset.val;
+      if (k === "lang") return setLanguage(v);
       if (k === "tema" || k === "dil") {
         S.prefs[k] = v;
         applyTheme();
@@ -67,11 +68,12 @@ const SystemView = {
     if (ctx) {
       const name = ctx.dataset.context;
       const r = await confirmDialog({
-        title: `“${name}” bağlamına geçilsin mi?`, confirmText: "Geç", icon: "server",
-        text: "Basic Docker ve terminaldeki docker komutu artık bu motora bağlanır. Diğer motordaki parçalar silinmez; geri geçince yine görünür.",
+        title: L(`“${name}” bağlamına geçilsin mi?`, `Switch to the “${name}” context?`), confirmText: L("Geç", "Switch"), icon: "server",
+        text: L("Basic Docker ve terminaldeki docker komutu artık bu motora bağlanır. Diğer motordaki parçalar silinmez; geri geçince yine görünür.",
+          "Basic Docker and the docker command in your terminal will connect to this engine. Containers on the other engine are not deleted; they show up again when you switch back."),
       });
       if (!r) return;
-      try { await api("/api/baglam", { ad: name }); flash(`Artık ${name} kullanılıyor`); S.data = null; await refresh(); this.load(); } catch (err) { flash(err.message, true); }
+      try { await api("/api/baglam", { ad: name }); flash(L(`Artık ${name} kullanılıyor`, `Now using ${name}`)); S.data = null; await refresh(); this.load(); } catch (err) { flash(err.message, true); }
       return;
     }
     if (t.closest("[data-backup-root]")) return chooseBackupRoot(() => this.load());
@@ -90,7 +92,7 @@ const SystemView = {
     if (t.id === "sy-notify") {
       S.prefs.bildirim = t.checked;
       api("/api/ayarlar/kaydet", { bildirim: t.checked }).catch(() => {});
-      flash(t.checked ? "Çökme bildirimleri açık" : "Çökme bildirimleri kapalı");
+      flash(t.checked ? L("Çökme bildirimleri açık", "Crash notifications on") : L("Çökme bildirimleri kapalı", "Crash notifications off"));
     }
     if (t.id === "sy-narrow") {
       S.prefs.kenar_dar = t.checked;
@@ -110,84 +112,89 @@ const SystemView = {
           <div class="engine-top">
             <div class="engine-logo ${up ? "on" : ""}">${icon("server")}</div>
             <div class="grow">
-              <div class="muted small">Docker motoru</div>
+              <div class="muted small">${L("Docker motoru", "Docker engine")}</div>
               <h2>${engineName}</h2>
-              <div>${up ? badge("ok", "Çalışıyor") : badge("err", "Kapalı ya da ulaşılamıyor")}</div>
+              <div>${up ? badge("ok", L("Çalışıyor", "Running")) : badge("err", L("Kapalı ya da ulaşılamıyor", "Stopped or unreachable"))}</div>
             </div>
             ${up ? "" : html`<button class="btn primary" data-start-engine>${icon("power")}${engineOpenLabel(i?.engine || S.data?.platform?.engine)}</button>`}
           </div>
-          ${this.error && !i ? callout({ level: "warn", text: this.error, actions: html`<button class="btn sm" data-retry>${icon("refresh")}Tekrar dene</button>` }) : ""}
+          ${this.error && !i ? callout({ level: "warn", text: this.error, actions: html`<button class="btn sm" data-retry>${icon("refresh")}${L("Tekrar dene", "Try again")}</button>` }) : ""}
           ${i ? html`
             <div class="engine-stats">
-              <div><span class="muted small">İşlemci</span><b>${i.cpus} çekirdek</b></div>
-              <div><span class="muted small">Bellek</span><b>${fmt.bytes(i.memory, 0)}</b></div>
-              <div><span class="muted small">Mimari</span><b>${i.arch}</b></div>
+              <div><span class="muted small">${L("İşlemci", "CPU")}</span><b>${L(`${i.cpus} çekirdek`, `${i.cpus} cores`)}</b></div>
+              <div><span class="muted small">${L("Bellek", "Memory")}</span><b>${fmt.bytes(i.memory, 0)}</b></div>
+              <div><span class="muted small">${L("Mimari", "Architecture")}</span><b>${i.arch}</b></div>
               <div><span class="muted small">${T("container", true)}</span><b>${i.containers.running} / ${i.containers.total}</b></div>
               <div><span class="muted small">${T("image", true)}</span><b>${i.images}</b></div>
             </div>
             ${kv([
-              ["Docker sürümü", html`<span class="mono">${i.server_version}</span> <span class="muted small">(komut satırı ${i.client_version})</span>`],
-              ["Compose sürümü", html`<span class="mono">${i.compose_version || "—"}</span>`],
-              ["İşletim sistemi", i.os],
-              ["Depolama sürücüsü", html`<span class="mono">${i.storage_driver}</span>`],
-              ["docker komutu", html`<span class="mono">${i.docker_path || "bulunamadı"}</span>`],
+              [L("Docker sürümü", "Docker version"), html`<span class="mono">${i.server_version}</span> <span class="muted small">(${L("komut satırı", "CLI")} ${i.client_version})</span>`],
+              [L("Compose sürümü", "Compose version"), html`<span class="mono">${i.compose_version || "—"}</span>`],
+              [L("İşletim sistemi", "Operating system"), i.os],
+              [L("Depolama sürücüsü", "Storage driver"), html`<span class="mono">${i.storage_driver}</span>`],
+              [L("docker komutu", "docker command"), html`<span class="mono">${i.docker_path || L("bulunamadı", "not found")}</span>`],
             ])}
-            ${i.engine === "orbstack" ? html`<p class="muted small">Motorun bellek ve işlemci sınırını OrbStack'in kendi ayarlarından değiştirebilirsin.</p>`
-              : i.engine === "docker-desktop" ? html`<p class="muted small">Bellek ve işlemci sınırı: Docker Desktop → Settings → Resources.</p>` : ""}
-            ${i.warnings.length ? callout({ level: "warn", title: "Docker uyarıları", text: i.warnings.join(" · ") }) : ""}` : ""}
+            ${i.engine === "orbstack" ? html`<p class="muted small">${L("Motorun bellek ve işlemci sınırını OrbStack'in kendi ayarlarından değiştirebilirsin.", "You can change the engine's memory and CPU limits in OrbStack's own settings.")}</p>`
+              : i.engine === "docker-desktop" ? html`<p class="muted small">${L("Bellek ve işlemci sınırı", "Memory and CPU limits")}: Docker Desktop → Settings → Resources.</p>` : ""}
+            ${i.warnings.length ? callout({ level: "warn", title: L("Docker uyarıları", "Docker warnings"), text: i.warnings.join(" · ") }) : ""}` : ""}
         </section>
 
         ${i?.contexts?.length > 1 ? html`<section class="panel span-2">
-          <h3 class="panel-title">${icon("server")}Bağlamlar (hangi Docker'a bağlanılıyor?)</h3>
-          <p class="muted small">Bilgisayarında birden fazla Docker motoru varsa (ör. OrbStack ve Docker Desktop) buradan hangisini yöneteceğini seçersin.</p>
+          <h3 class="panel-title">${icon("server")}${L("Bağlamlar (hangi Docker'a bağlanılıyor?)", "Contexts (which Docker are we talking to?)")}</h3>
+          <p class="muted small">${L("Bilgisayarında birden fazla Docker motoru varsa (ör. OrbStack ve Docker Desktop) buradan hangisini yöneteceğini seçersin.", "If you have more than one Docker engine (e.g. OrbStack and Docker Desktop), choose which one to manage here.")}</p>
           <ul class="ctx-list">${i.contexts.map((c) => html`
             <li class="${c.current ? "current" : ""}">
               ${dot(c.current ? "ok" : "off")}
               <div class="grow min0"><div class="strong">${c.name}${c.desc ? html` <span class="muted small">— ${c.desc}</span>` : ""}</div><div class="mono small muted ellipsis">${c.endpoint}</div>${c.error ? html`<div class="small txt-err">${c.error}</div>` : ""}</div>
-              ${c.current ? pill("Kullanılıyor", "ok") : html`<button class="btn sm" data-context="${c.name}">Buna geç</button>`}
+              ${c.current ? pill(L("Kullanılıyor", "In use"), "ok") : html`<button class="btn sm" data-context="${c.name}">${L("Buna geç", "Switch")}</button>`}
             </li>`)}</ul>
         </section>` : ""}
 
         <section class="panel">
-          <h3 class="panel-title">${icon("monitor")}Görünüm</h3>
+          <h3 class="panel-title">${icon("monitor")}${L("Görünüm", "Appearance")}</h3>
           <div class="setting">
-            <div><div class="strong">Tema</div><div class="muted small">Sistem seçilirse macOS'un açık/koyu ayarını izler.</div></div>
-            ${segmented("tema", [{ id: "sistem", label: "Sistem", icon: "monitor" }, { id: "acik", label: "Açık", icon: "sun" }, { id: "koyu", label: "Koyu", icon: "moon" }], S.prefs.tema || "sistem")}
+            <div><div class="strong">Dil / Language</div><div class="muted small">${L("Arayüzün dili.", "The interface language.")}</div></div>
+            ${segmented("lang", [{ id: "tr", label: "Türkçe" }, { id: "en", label: "English" }], S.prefs.lang === "en" ? "en" : "tr")}
           </div>
           <div class="setting">
-            <div><div class="strong">Dil</div><div class="muted small">Sade: “parça, kalıp, veri kutusu”. Teknik: “konteyner, imaj, volume”.</div></div>
+            <div><div class="strong">${L("Tema", "Theme")}</div><div class="muted small">${L("Sistem seçilirse macOS'un açık/koyu ayarını izler.", "System follows macOS's light/dark setting.")}</div></div>
+            ${segmented("tema", [{ id: "sistem", label: L("Sistem", "System"), icon: "monitor" }, { id: "acik", label: L("Açık", "Light"), icon: "sun" }, { id: "koyu", label: L("Koyu", "Dark"), icon: "moon" }], S.prefs.tema || "sistem")}
+          </div>
+          ${isEN() ? "" : html`<div class="setting">
+            <div><div class="strong">Terimler</div><div class="muted small">Sade: “parça, kalıp, veri kutusu”. Teknik: “konteyner, imaj, volume”.</div></div>
             ${segmented("dil", [{ id: "sade", label: "Sade Türkçe" }, { id: "teknik", label: "Teknik terimler" }], S.prefs.dil || "sade")}
-          </div>
+          </div>`}
           <div class="setting">
-            <div><div class="strong">Dar kenar çubuğu</div><div class="muted small">Menüde sadece simgeler görünür, içeriğe daha çok yer kalır.</div></div>
-            <label class="switch-inline"><input type="checkbox" id="sy-narrow" ${S.prefs.kenar_dar ? raw("checked") : ""}><span class="switch" aria-hidden="true"></span><span class="sr">Dar kenar çubuğu</span></label>
+            <div><div class="strong">${L("Dar kenar çubuğu", "Narrow sidebar")}</div><div class="muted small">${L("Menüde sadece simgeler görünür, içeriğe daha çok yer kalır.", "Only icons in the menu, more room for content.")}</div></div>
+            <label class="switch-inline"><input type="checkbox" id="sy-narrow" ${S.prefs.kenar_dar ? raw("checked") : ""}><span class="switch" aria-hidden="true"></span><span class="sr">${L("Dar kenar çubuğu", "Narrow sidebar")}</span></label>
           </div>
         </section>
 
         <section class="panel">
-          <h3 class="panel-title">${icon("bell")}Bildirimler ve yedekler</h3>
+          <h3 class="panel-title">${icon("bell")}${L("Bildirimler ve yedekler", "Notifications & backups")}</h3>
           <div class="setting">
-            <div><div class="strong">Çökünce bildir</div><div class="muted small">Bir parça beklenmedik şekilde kapanırsa ya da sağlık kontrolünden geçemezse macOS bildirimi gelir (Basic Docker açıkken).</div></div>
-            <label class="switch-inline"><input type="checkbox" id="sy-notify" ${S.prefs.bildirim !== false ? raw("checked") : ""}><span class="switch" aria-hidden="true"></span><span class="sr">Çökünce bildir</span></label>
+            <div><div class="strong">${L("Çökünce bildir", "Notify on crash")}</div><div class="muted small">${L("Bir parça beklenmedik şekilde kapanırsa ya da sağlık kontrolünden geçemezse macOS bildirimi gelir (Basic Docker açıkken).", "You get a macOS notification if a container stops unexpectedly or fails its health check (while Basic Docker is open).")}</div></div>
+            <label class="switch-inline"><input type="checkbox" id="sy-notify" ${S.prefs.bildirim !== false ? raw("checked") : ""}><span class="switch" aria-hidden="true"></span><span class="sr">${L("Çökünce bildir", "Notify on crash")}</span></label>
           </div>
           <div class="setting column">
-            <div><div class="strong">Yedek klasörü</div><div class="mono small muted ellipsis" title="${this.prefs?.yedek_klasoru}">${this.prefs?.yedek_klasoru || ""}</div></div>
-            <div class="row-actions"><button class="btn sm" data-open-backups>${icon("folder")}Aç</button><button class="btn sm" data-backup-root>Değiştir…</button></div>
+            <div><div class="strong">${L("Yedek klasörü", "Backups folder")}</div><div class="mono small muted ellipsis" title="${this.prefs?.yedek_klasoru}">${this.prefs?.yedek_klasoru || ""}</div></div>
+            <div class="row-actions"><button class="btn sm" data-open-backups>${icon("folder")}${L("Aç", "Open")}</button><button class="btn sm" data-backup-root>${L("Değiştir…", "Change…")}</button></div>
           </div>
         </section>
 
         <section class="panel">
-          <h3 class="panel-title">${icon("command")}Klavye kısayolları</h3>
-          <ul class="shortcut-list">${SHORTCUTS.map(([k, d]) => html`<li><span>${d}</span>${kbd(k)}</li>`)}</ul>
+          <h3 class="panel-title">${icon("command")}${L("Klavye kısayolları", "Keyboard shortcuts")}</h3>
+          <ul class="shortcut-list">${SHORTCUTS.map(([k, tr, en]) => html`<li><span>${L(tr, en)}</span>${kbd(k)}</li>`)}</ul>
         </section>
 
         <section class="panel">
-          <h3 class="panel-title">${icon("info")}Hakkında</h3>
+          <h3 class="panel-title">${icon("info")}${L("Hakkında", "About")}</h3>
           <p><b>Basic Docker</b> <span class="mono muted">v${this.prefs?.surum || ""}</span></p>
-          <p class="muted small">Docker'ı sade Türkçeyle yöneten, Mac'e özel uygulama. Tamamen yerel çalışır; ağa bir şey açmaz, sadece <code>docker</code> komutunu kullanır.</p>
+          <p class="muted small">${isEN() ? html`A native Mac app that manages Docker in plain language. It runs entirely locally, opens nothing to the network and only uses the <code>docker</code> command.`
+            : html`Docker'ı sade Türkçeyle yöneten, Mac'e özel uygulama. Tamamen yerel çalışır; ağa bir şey açmaz, sadece <code>docker</code> komutunu kullanır.`}</p>
           <div class="row-actions wrap">
-            <button class="btn sm" data-help>${icon("help")}Sözlük</button>
-            <button class="btn sm" data-intro>${icon("info")}Tanıtımı tekrar göster</button>
+            <button class="btn sm" data-help>${icon("help")}${L("Sözlük", "Glossary")}</button>
+            <button class="btn sm" data-intro>${icon("info")}${L("Tanıtımı tekrar göster", "Show the intro again")}</button>
             <a class="btn sm" href="https://github.com/benysff/basic-docker" target="_blank" rel="noopener">${icon("external")}GitHub</a>
           </div>
         </section>
