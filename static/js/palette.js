@@ -43,6 +43,8 @@ const Palette = {
       ["sparkles", L("Disk temizliği", "Disk cleanup"), () => Router.go("/temizlik")],
       ["rocket", L("Yeni çalışma seti", "New work set"), () => openSetEditor()],
       ["archive", L("Yedekleri aç", "Open backups"), () => Router.go("/kutular/yedekler")],
+      ["server", L("Uzak Docker ekle (SSH)", "Add remote Docker (SSH)"), () => openAddRemote(() => Router.go("/sistem"))],
+      S.data?.platform?.remote && ["server", L("Bu Mac'teki Docker'a dön", "Switch to the Docker on this Mac"), () => useLocalDocker()],
       ["globe", L("Switch to English", "Türkçeye geç"), () => setLanguage(isEN() ? "tr" : "en")],
       ["moon", L("Temayı değiştir (açık/koyu)", "Toggle theme (light/dark)"), () => { S.prefs.tema = document.documentElement.dataset.theme === "dark" ? "acik" : "koyu"; applyTheme(); api("/api/ayarlar/kaydet", { tema: S.prefs.tema }).catch(() => {}); }],
       !isEN() && ["sliders", S.prefs.dil === "teknik" ? "Sade Türkçeye geç" : "Teknik terimlere geç", () => { S.prefs.dil = S.prefs.dil === "teknik" ? "sade" : "teknik"; api("/api/ayarlar/kaydet", { dil: S.prefs.dil }).catch(() => {}); renderSidebar(); Router.current?.view.unmount?.(); Router.current = null; Router.render(); }],

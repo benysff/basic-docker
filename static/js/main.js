@@ -155,6 +155,15 @@ function renderEngineState() {
       icon: "plug", title: L("Arka taraf yanıt vermiyor", "The backend isn't responding"),
       text: L("Basic Docker'ın Python tarafına ulaşılamadı. Uygulamayı kapatıp yeniden açmayı dene.", "Couldn't reach Basic Docker's Python side. Try quitting and reopening the app."),
     });
+  } else if (d && !d.docker.ok && d.platform?.remote) {
+    const r = d.platform.remote;
+    content = emptyState({
+      icon: "server", title: L(`${r.context || r.host} sunucusuna ulaşılamıyor`, `Can't reach ${r.context || r.host}`),
+      text: L(`Uzak Docker (${r.host}) yanıt vermiyor. İnternet ya da VPN bağlantını ve sunucunun açık olduğunu kontrol et. Bu arada bu Mac'teki Docker'a dönebilirsin.`,
+        `The remote Docker (${r.host}) isn't responding. Check your internet or VPN connection and that the server is up. Meanwhile you can switch back to the Docker on this Mac.`),
+      action: html`<button class="btn" data-global="retry-engine">${icon("refresh")}${L("Tekrar dene", "Try again")}</button>
+        <button class="btn primary" data-global="use-local">${icon("server")}${engineOpenLabel("remote")}</button>`,
+    });
   } else if (d && !d.docker.ok) {
     const kind = d.platform?.engine;
     content = d.docker.reason === "yok"
@@ -231,8 +240,12 @@ document.addEventListener("click", async (e) => {
     if (a === "docker-ac") {
       try { flash((await api("/api/docker-ac", {})).mesaj); } catch (err) { flash(err.message, true); }
     }
+    if (a === "use-local") useLocalDocker();
+    if (a === "retry-engine") refresh();
     return;
   }
+  const tn = t.closest("[data-tunnel]");
+  if (tn) return openTunnel(+tn.dataset.tunnel);
   const job = t.closest("[data-job]");
   if (job) return openJob(job.dataset.job);
   const ct = t.closest("[data-close-toast]");
@@ -255,8 +268,45 @@ document.addEventListener("click", (e) => {
   if (!a || !/^https?:/.test(a.getAttribute("href"))) return;
   e.preventDefault();
   e.stopPropagation();
-  api("/api/link-ac", { url: a.href }).catch((err) => flash(err.message, true));
+  api("/api/link-ac", { url: a.href }).then((r) => {
+    const tn = r?.tunel;
+    if (tn && Date.now() / 1000 - tn.started < 5) {
+      flash(L(`SSH tüneli açıldı: localhost:${tn.local} → sunucu:${tn.remote}`, `SSH tunnel opened: localhost:${tn.local} → server:${tn.remote}`));
+    }
+  }).catch((err) => flash(err.message, true));
 }, true);
+
+// ---------- Uzak Docker ------------------------------------------------------------------
+/** Başka bir Docker'a geçildikten sonra: eski motorun verileri, rozetleri ve grafikleri temizlenir. */
+async function afterContextChange() {
+  S.data = null;
+  S.catalog = null;
+  S.stats = {};
+  S.badges = {};
+  await refresh();
+  Router.current?.view.unmount?.();
+  Router.current = null;
+  Router.render();
+  refreshBadges();
+}
+
+async function useLocalDocker() {
+  try {
+    const r = await api("/api/baglam/yerel", {});
+    flash(L(`Bu Mac'teki Docker'a dönüldü (${r.ad})`, `Switched back to the Docker on this Mac (${r.ad})`));
+    await afterContextChange();
+  } catch (err) { flash(err.message, true); }
+}
+
+async function openTunnel(port) {
+  try {
+    const tn = (await api("/api/tunel/ac", { kapi: port })).tunel;
+    flash(tn.local === tn.remote
+      ? L(`Tünel açık: bu Mac'teki localhost:${tn.local} artık sunucudaki ${tn.remote} numaralı kapıya gider.`, `Tunnel open: localhost:${tn.local} on this Mac now reaches ${tn.remote} on the server.`)
+      : L(`Tünel açık: localhost:${tn.local} → sunucu:${tn.remote}. ${tn.remote} bu Mac'te dolu olduğu için adreste ${tn.local} kullan.`,
+        `Tunnel open: localhost:${tn.local} → server:${tn.remote}. ${tn.remote} is taken on this Mac, so use ${tn.local} in the address.`));
+  } catch (err) { flash(err.message, true); }
+}
 
 // ---------- Pencere (modal) olayları ---------------------------------------------------
 Modal.el = $("#modal");

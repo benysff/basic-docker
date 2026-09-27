@@ -297,9 +297,9 @@ const AppView = {
                 </span>
               </div>
               <pre>${shown}</pre>
-              <div class="conn-note">${conn.scope === "local"
+              <div class="conn-note">${connNote(conn) || (conn.scope === "local"
                 ? L("Bilgisayarındaki kodun bu adresle bağlanır. Projenin .env dosyasına yapıştırabilirsin.", "Code on your computer connects with this address. Paste it into the project's .env file.")
-                : L("Bu parçaya dışarıdan kapı açılmamış. Bu adres sadece aynı uygulamadaki diğer parçalardan çalışır.", "This container has no published port. This address only works from other containers in the same app.")}</div>
+                : L("Bu parçaya dışarıdan kapı açılmamış. Bu adres sadece aynı uygulamadaki diğer parçalardan çalışır.", "This container has no published port. This address only works from other containers in the same app."))}</div>
             </div>` : ""}
         </div>
         <div class="part-actions">

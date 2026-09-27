@@ -88,6 +88,11 @@ const PortsView = {
     const lan = ports.filter((p) => p.scope === "lan" && p.owner === "docker");
 
     patch($("#pt-alerts", this.root), html`
+      ${this.data.remote ? callout({
+        level: "info", icon: "server", title: L("Uzak Docker", "Remote Docker"),
+        text: L("Sunucudaki parçaların kapıları gösteriliyor; bu Mac'teki programlar listede yok. Bir kapıya bu Mac'ten ulaşmak için bağlantısına tıkla, SSH tüneli kendiliğinden açılır.",
+          "Showing the ports of containers on the server; programs on this Mac aren't listed. Click a port's link to reach it from this Mac; an SSH tunnel opens automatically."),
+      }) : ""}
       ${conflicts.map((c) => callout({
         level: "warn", icon: "alert",
         title: L(`${c.wanted_by.app_name} başlatılırsa çakışır`, `${c.wanted_by.app_name} will clash if started`),

@@ -20,6 +20,8 @@ const SystemView = {
     this.info = null;
     this.prefs = null;
     this.error = null;
+    this.ctx = null;
+    this.tests = {};
     root.innerHTML = String(html`
       <div class="page">
         ${pageHead({ title: L("Sistem ve ayarlar", "System & settings"), desc: L("Docker motoru, bağlantılar ve Basic Docker'ın tercihleri.", "The Docker engine, connections and Basic Docker's preferences.") })}
@@ -37,10 +39,12 @@ const SystemView = {
 
   async load() {
     try {
-      const [s, p] = await Promise.all([api("/api/sistem").catch((e) => ({ error: e.message })), api("/api/ayarlar")]);
+      const [s, p, c] = await Promise.all([api("/api/sistem").catch((e) => ({ error: e.message })), api("/api/ayarlar"),
+        api("/api/baglamlar").catch(() => null)]);
       this.info = s.sistem || null;
       this.error = s.error || null;
       this.prefs = p;
+      this.ctx = c;
     } catch (e) { this.error = e.message; }
     this.render();
   },
@@ -60,6 +64,7 @@ const SystemView = {
       }
       return;
     }
+    if (t.closest("[data-use-local]")) return useLocalDocker();
     if (t.closest("[data-start-engine]")) {
       try { flash((await api("/api/docker-ac", {})).mesaj); } catch (err) { flash(err.message, true); }
       return;
@@ -73,8 +78,43 @@ const SystemView = {
           "Basic Docker and the docker command in your terminal will connect to this engine. Containers on the other engine are not deleted; they show up again when you switch back."),
       });
       if (!r) return;
-      try { await api("/api/baglam", { ad: name }); flash(L(`Artık ${name} kullanılıyor`, `Now using ${name}`)); S.data = null; await refresh(); this.load(); } catch (err) { flash(err.message, true); }
+      try { await api("/api/baglam", { ad: name }); flash(L(`Artık ${name} kullanılıyor`, `Now using ${name}`)); await afterContextChange(); } catch (err) { flash(err.message, true); }
       return;
+    }
+    if (t.closest("[data-add-remote]")) return openAddRemote(() => this.load());
+    const test = t.closest("[data-ctx-test]");
+    if (test) {
+      const name = test.dataset.ctxTest;
+      this.tests[name] = { busy: true };
+      this.render();
+      try { this.tests[name] = (await api("/api/baglam/dene", { ad: name })).sonuc; } catch (err) { this.tests[name] = { ok: false, error: err.message }; }
+      return this.render();
+    }
+    const del = t.closest("[data-ctx-del]");
+    if (del) {
+      const name = del.dataset.ctxDel;
+      const r = await confirmDialog({
+        title: L(`“${name}” bağlantısı silinsin mi?`, `Remove the “${name}” connection?`), danger: true, icon: "trash", confirmText: L("Sil", "Remove"),
+        text: L("Sadece bu Mac'teki bağlantı kaydı silinir. Sunucudaki parçalara ve verilere dokunulmaz.",
+          "Only the connection saved on this Mac is removed. Containers and data on the server are not touched."),
+      });
+      if (!r) return;
+      try { await api("/api/baglam/sil", { ad: name }); flash(L("Bağlantı silindi", "Connection removed")); this.load(); } catch (err) { flash(err.message, true); }
+      return;
+    }
+    const tclose = t.closest("[data-tunnel-close]");
+    if (tclose) {
+      await api("/api/tunel/kapat", { kapi: +tclose.dataset.tunnelClose }).catch((err) => flash(err.message, true));
+      return this.load();
+    }
+    if (t.closest("[data-tunnel-open]")) {
+      const port = +$("#sy-tunnel-port", this.root)?.value;
+      if (!port) return flash(L("Sunucudaki kapı numarasını yaz.", "Enter the port number on the server."), true);
+      try {
+        const tn = (await api("/api/tunel/ac", { kapi: port })).tunel;
+        flash(L(`Tünel açık: localhost:${tn.local} → sunucu:${tn.remote}`, `Tunnel open: localhost:${tn.local} → server:${tn.remote}`));
+      } catch (err) { flash(err.message, true); }
+      return this.load();
     }
     if (t.closest("[data-backup-root]")) return chooseBackupRoot(() => this.load());
     if (t.closest("[data-open-backups]")) return api("/api/yedek/goster", {}).catch((err) => flash(err.message, true));
@@ -105,18 +145,20 @@ const SystemView = {
     const body = $("#sy-body", this.root);
     const i = this.info;
     const up = S.data?.docker?.ok;
-    const engineName = i?.engine_name || S.data?.platform?.engine_name || "Docker";
+    const remote = this.ctx?.uzak || S.data?.platform?.remote;
+    const engineName = remote ? (remote.context || remote.host) : i?.engine_name || S.data?.platform?.engine_name || "Docker";
     patch(body, html`
       <div class="sys-grid">
         <section class="panel engine-card span-2">
           <div class="engine-top">
             <div class="engine-logo ${up ? "on" : ""}">${icon("server")}</div>
             <div class="grow">
-              <div class="muted small">${L("Docker motoru", "Docker engine")}</div>
+              <div class="muted small">${remote ? L(`Uzak Docker · ${remote.kind.toUpperCase()} · ${remote.host}`, `Remote Docker · ${remote.kind.toUpperCase()} · ${remote.host}`) : L("Docker motoru", "Docker engine")}</div>
               <h2>${engineName}</h2>
               <div>${up ? badge("ok", L("Çalışıyor", "Running")) : badge("err", L("Kapalı ya da ulaşılamıyor", "Stopped or unreachable"))}</div>
             </div>
-            ${up ? "" : html`<button class="btn primary" data-start-engine>${icon("power")}${engineOpenLabel(i?.engine || S.data?.platform?.engine)}</button>`}
+            ${up ? "" : remote ? html`<button class="btn primary" data-use-local>${icon("server")}${engineOpenLabel("remote")}</button>`
+              : html`<button class="btn primary" data-start-engine>${icon("power")}${engineOpenLabel(i?.engine || S.data?.platform?.engine)}</button>`}
           </div>
           ${this.error && !i ? callout({ level: "warn", text: this.error, actions: html`<button class="btn sm" data-retry>${icon("refresh")}${L("Tekrar dene", "Try again")}</button>` }) : ""}
           ${i ? html`
@@ -134,20 +176,57 @@ const SystemView = {
               [L("Depolama sürücüsü", "Storage driver"), html`<span class="mono">${i.storage_driver}</span>`],
               [L("docker komutu", "docker command"), html`<span class="mono">${i.docker_path || L("bulunamadı", "not found")}</span>`],
             ])}
-            ${i.engine === "orbstack" ? html`<p class="muted small">${L("Motorun bellek ve işlemci sınırını OrbStack'in kendi ayarlarından değiştirebilirsin.", "You can change the engine's memory and CPU limits in OrbStack's own settings.")}</p>`
+            ${remote ? html`<p class="muted small">${remote.kind === "ssh"
+              ? L("Bu motor uzak bir sunucuda. Parçaların kapılarına bu Mac'ten ulaşmak için bağlantılarına tıkla; SSH tüneli kendiliğinden açılır (VS Code'daki gibi).",
+                "This engine is on a remote server. Click a container's link to reach its port from this Mac; an SSH tunnel opens automatically (like in VS Code).")
+              : L("Bu motor uzak bir sunucuda (TCP). Kapılara sunucunun adresiyle ulaşılır; sadece sunucunun kendisine açık (127.0.0.1) kapılara buradan ulaşılamaz.",
+                "This engine is on a remote server (TCP). Ports are reached at the server's address; ports bound only to the server itself (127.0.0.1) can't be reached from here.")}</p>`
+              : i.engine === "orbstack" ? html`<p class="muted small">${L("Motorun bellek ve işlemci sınırını OrbStack'in kendi ayarlarından değiştirebilirsin.", "You can change the engine's memory and CPU limits in OrbStack's own settings.")}</p>`
               : i.engine === "docker-desktop" ? html`<p class="muted small">${L("Bellek ve işlemci sınırı", "Memory and CPU limits")}: Docker Desktop → Settings → Resources.</p>` : ""}
             ${i.warnings.length ? callout({ level: "warn", title: L("Docker uyarıları", "Docker warnings"), text: i.warnings.join(" · ") }) : ""}` : ""}
         </section>
 
-        ${i?.contexts?.length > 1 ? html`<section class="panel span-2">
-          <h3 class="panel-title">${icon("server")}${L("Bağlamlar (hangi Docker'a bağlanılıyor?)", "Contexts (which Docker are we talking to?)")}</h3>
-          <p class="muted small">${L("Bilgisayarında birden fazla Docker motoru varsa (ör. OrbStack ve Docker Desktop) buradan hangisini yöneteceğini seçersin.", "If you have more than one Docker engine (e.g. OrbStack and Docker Desktop), choose which one to manage here.")}</p>
-          <ul class="ctx-list">${i.contexts.map((c) => html`
+        ${this.ctx ? html`<section class="panel span-2">
+          <div class="panel-head">
+            <h3 class="panel-title">${icon("server")}${L("Bağlantılar (hangi Docker'ı yönetiyorsun?)", "Connections (which Docker are you managing?)")}</h3>
+            <button class="btn sm primary" data-add-remote>${icon("plus")}${L("Uzak Docker ekle", "Add remote Docker")}</button>
+          </div>
+          <p class="muted small">${L("Bu Mac'teki motorlar (OrbStack, Docker Desktop) ve eklediğin uzak sunucular. Uzak sunucuya SSH anahtarınla bağlanılır; VS Code'daki gibi.",
+            "Engines on this Mac (OrbStack, Docker Desktop) and remote servers you've added. Remote servers are reached with your SSH key, just like in VS Code.")}</p>
+          <ul class="ctx-list">${this.ctx.baglamlar.map((c) => {
+            const tr = this.tests[c.name];
+            return html`
             <li class="${c.current ? "current" : ""}">
               ${dot(c.current ? "ok" : "off")}
-              <div class="grow min0"><div class="strong">${c.name}${c.desc ? html` <span class="muted small">— ${c.desc}</span>` : ""}</div><div class="mono small muted ellipsis">${c.endpoint}</div>${c.error ? html`<div class="small txt-err">${c.error}</div>` : ""}</div>
-              ${c.current ? pill(L("Kullanılıyor", "In use"), "ok") : html`<button class="btn sm" data-context="${c.name}">${L("Buna geç", "Switch")}</button>`}
-            </li>`)}</ul>
+              <div class="grow min0">
+                <div class="strong">${c.name} ${pill(c.kind === "local" ? L("Bu Mac", "This Mac") : c.kind.toUpperCase(), c.kind === "local" ? "" : "info")}${c.desc ? html` <span class="muted small">— ${c.desc}</span>` : ""}</div>
+                <div class="mono small muted ellipsis">${c.endpoint}</div>
+                ${c.error ? html`<div class="small txt-err">${c.error}</div>` : ""}
+                ${tr ? html`<div class="small ${tr.busy ? "muted" : tr.ok ? "txt-ok" : "txt-err"}">${tr.busy ? L("Deneniyor…", "Testing…")
+                  : tr.ok ? L(`Bağlantı tamam · Docker ${tr.version} · ${tr.ms} ms`, `Connected · Docker ${tr.version} · ${tr.ms} ms`) : tr.error}</div>` : ""}
+              </div>
+              <div class="row-actions">
+                <button class="btn sm" data-ctx-test="${c.name}" ${tr?.busy ? raw("disabled") : ""}>${icon("activity")}${L("Dene", "Test")}</button>
+                ${c.current ? pill(L("Kullanılıyor", "In use"), "ok") : html`<button class="btn sm" data-context="${c.name}">${L("Buna geç", "Switch")}</button>`}
+                ${c.current || c.kind === "local" ? "" : html`<button class="icon-btn sm" data-ctx-del="${c.name}" aria-label="${L("Bağlantıyı sil", "Remove connection")}" title="${L("Bağlantıyı sil", "Remove connection")}">${icon("trash")}</button>`}
+              </div>
+            </li>`;
+          })}</ul>
+        </section>` : ""}
+
+        ${remote?.kind === "ssh" ? html`<section class="panel span-2">
+          <h3 class="panel-title">${icon("link")}${L("SSH tünelleri", "SSH tunnels")}</h3>
+          <p class="muted small">${L("Sunucudaki bir kapıyı bu Mac'e getirir: sunucuda 3000'de çalışan site, burada localhost:3000'de açılır. Bağlantılara tıklayınca kendiliğinden açılır; veritabanı gibi tıklanmayan kapılar için buradan aç.",
+            "Brings a port on the server to this Mac: a site running on 3000 there opens at localhost:3000 here. Tunnels open automatically when you click a link; open one here for ports you don't click, like a database.")}</p>
+          ${this.ctx?.tuneller?.length ? html`<ul class="ctx-list">${this.ctx.tuneller.map((tn) => html`
+            <li>${dot("ok")}
+              <div class="grow min0"><div class="strong mono">localhost:${tn.local} → ${remote.host}:${tn.remote}</div><div class="small muted">${L(`${fmt.ago(tn.started)} açıldı`, `opened ${fmt.ago(tn.started)}`)}</div></div>
+              <div class="row-actions">${linkChip(tn.url, L("Aç", "Open"))}<button class="btn sm" data-tunnel-close="${tn.remote}">${icon("close")}${L("Kapat", "Close")}</button></div>
+            </li>`)}</ul>` : html`<p class="muted small">${L("Şu an açık tünel yok.", "No tunnels are open right now.")}</p>`}
+          <div class="input-row tunnel-form">
+            <input id="sy-tunnel-port" inputmode="numeric" placeholder="${L("Sunucudaki kapı (ör. 5432)", "Port on the server (e.g. 5432)")}" aria-label="${L("Sunucudaki kapı", "Port on the server")}">
+            <button class="btn" data-tunnel-open>${icon("link")}${L("Tünel aç", "Open tunnel")}</button>
+          </div>
         </section>` : ""}
 
         <section class="panel">

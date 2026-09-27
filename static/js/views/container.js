@@ -382,7 +382,7 @@ const ContainerView = {
               ${conn.has_secret ? html`<button class="icon-btn sm" data-reveal="${c.id}" aria-label="${L("Şifreyi göster/gizle", "Show/hide password")}">${icon(S.reveal.has(c.id) ? "eyeOff" : "eye")}</button>` : ""}
               ${copyBtn(conn.text)}</span></div>
             <pre>${shown}</pre>
-            <div class="conn-note">${conn.scope === "local" ? L("Bilgisayarındaki kodun bu adresle bağlanır.", "Code on your computer connects with this address.") : L("Bu adres sadece aynı uygulamadaki diğer parçalardan çalışır.", "This address only works from other containers in the same app.")}</div>
+            <div class="conn-note">${connNote(conn) || (conn.scope === "local" ? L("Bilgisayarındaki kodun bu adresle bağlanır.", "Code on your computer connects with this address.") : L("Bu adres sadece aynı uygulamadaki diğer parçalardan çalışır.", "This address only works from other containers in the same app."))}</div>
           </div>
         </section>` : ""}
 

@@ -186,8 +186,18 @@ function containerLevel(c) {
   return c.level;
 }
 
+/** Uzak SSH motorunda bağlantı adresi sunucudadır; bilgisayardaki kod için tünel gerekir. */
+function connNote(conn) {
+  if (conn.scope !== "local") return "";
+  const r = S.data?.platform?.remote;
+  if (!r) return "";
+  if (r.kind === "tcp") return L(`Adres sunucuda: bilgisayarından bağlanırken localhost yerine ${r.host} yaz.`, `This address is on the server: use ${r.host} instead of localhost when connecting from your computer.`);
+  return html`${L("Bu adres sunucuda çalışır. Bilgisayarındaki kod bağlansın diye tünel aç:", "This address works on the server. Open a tunnel so code on your computer can connect:")}
+    <button class="btn xs" data-tunnel="${conn.port}">${icon("link")}${L("Bu Mac'e tünel aç", "Tunnel to this Mac")}</button>`;
+}
+
 /** Motoru açma düğmesinin yazısı (Türkçe ekler motor adına göre değişir). */
 function engineOpenLabel(kind) {
-  if (isEN()) return { orbstack: "Open OrbStack", "docker-desktop": "Open Docker Desktop", colima: "Start Colima" }[kind] || "Open Docker";
-  return { orbstack: "OrbStack'i aç", "docker-desktop": "Docker Desktop'ı aç", colima: "Colima'yı başlat" }[kind] || "Docker'ı aç";
+  if (isEN()) return { orbstack: "Open OrbStack", "docker-desktop": "Open Docker Desktop", colima: "Start Colima", remote: "Switch to local Docker" }[kind] || "Open Docker";
+  return { orbstack: "OrbStack'i aç", "docker-desktop": "Docker Desktop'ı aç", colima: "Colima'yı başlat", remote: "Bu Mac'teki Docker'a dön" }[kind] || "Docker'ı aç";
 }

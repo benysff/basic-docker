@@ -36,6 +36,11 @@ The interface is available in **English and Turkish**; switch in System settings
 - **Activity history.** Docker keeps this history short; Basic Docker records what happens while it is open (started, stopped, crashed, ran out of memory…). If a container crashes unexpectedly you get a **macOS notification**.
 - **Image update check.** Is there a newer version of your images on Docker Hub? Also flags images built for Intel (amd64) that run slowly under emulation on your Mac. Removes many old versions of an image in one go.
 - **English and Turkish.** The whole interface, the diagnosis texts and the template list are available in both languages.
+- **Remote Docker (like VS Code).** Add the Docker on your server, home server or VM over SSH and manage it from here.
+  No password is asked, your SSH key is used, and all commands share a single SSH connection.
+  Clicking a remote container's link opens an **SSH tunnel** automatically: a site running on port 3000 on the server
+  opens at `localhost:3000` on this Mac. Ports like databases get a one-click tunnel. If it can't connect it tells you why
+  (key not authorized, no Docker on the server, user not in the docker group, tunnels disabled…).
 
 ![Diagnosis: why did the container stop?](docs/teshis-en.png)
 
@@ -43,7 +48,7 @@ The interface is available in **English and Turkish**; switch in System settings
 
 - **Containers:** all containers in one table; sort, filter and bulk start/stop/delete. Pause, kill, restart policy, connect to another network, environment variables (passwords hidden) and the raw `docker inspect` output.
 - **Images:** pull, run, inspect layers, delete. **Volumes:** create, back up, delete. **Networks:** which container is on which network with which IP and name; create, connect, disconnect, delete.
-- **System:** engine info (OrbStack / Docker Desktop / Colima), versions, and context switching if you have more than one Docker. If the engine is stopped it opens the right app (OrbStack or Docker Desktop).
+- **System:** engine info (OrbStack / Docker Desktop / Colima / remote server), versions, switching between connections, connection test (latency and version), open SSH tunnels. If the engine is stopped it opens the right app (OrbStack or Docker Desktop); if a remote server is unreachable, one click switches back to the Docker on this Mac.
 - **Search anywhere: ⌘K.** Type an app, container, page or action and press Enter ("start blog", "cleanup"…). Other shortcuts: ⌘N add new, ⌘1…⌘9 pages, `/` search.
 - Light / dark theme (follows macOS), English / Turkish interface, narrow sidebar, works well in small windows.
 
@@ -91,6 +96,12 @@ Your project folder and code are never touched. If you're not sure, **Back up** 
 In `~/Documents/Basic Docker Yedekleri` (can be changed on the System page). Volume backups use a tiny helper
 image (`alpine`, ~3 MB) once; it is downloaded if you don't have it.
 
+**How do I connect to Docker on a remote server?**
+System → **Add remote Docker** → enter the server address (`user@server`, an IP or a name from `~/.ssh/config`).
+If `ssh user@server` works in Terminal without a password, you're ready; Docker must be installed on the server and your
+user must be in the `docker` group. The connection is saved as a Docker context, so the `docker` command in your terminal
+sees the same server. To go back, pick the engine on this Mac on the System page.
+
 **Is it safe?**
 Ports of ready-made containers are only opened to your own computer (`127.0.0.1`); others on the network can't
 reach them. The app opens nothing to the network; it runs entirely locally and only uses the `docker` command. It only
@@ -114,6 +125,7 @@ Containers are grouped in this order:
 | `app.py` | Opens the window and connects the interface's calls to Python |
 | `docker_service.py` | Apps and containers: reading, grouping, descriptions, start/stop/delete/create, sets |
 | `resources.py` | Images, volumes, networks, port map, cleanup, engine info |
+| `remote.py` | Remote Docker: adding SSH / TCP connections, connection test, SSH tunnels |
 | `terminal.py` | In-app terminal: manages `docker exec -it` sessions through a pseudo terminal (PTY) |
 | `insights.py` | Diagnosis: exit codes and known errors in logs → plain-language explanation |
 | `backups.py` | Volume backup, database dump and restore |

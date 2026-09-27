@@ -395,6 +395,18 @@ def _kill_children():
             pass
 
 
+def reconnect():
+    """Bağlam (context) değişince canlı akışlar eski motora bağlı kalmasın: kapat, kendileri yeniden bağlanır."""
+    for proc in list(_children) + ([STATS.proc] if STATS.proc else []):
+        try:
+            proc.kill()
+        except (OSError, AttributeError):
+            pass
+    with STATS.lock:
+        STATS.latest.clear()
+        STATS.history.clear()
+
+
 def start():
     global _watcher
     if _watcher and _watcher.is_alive():

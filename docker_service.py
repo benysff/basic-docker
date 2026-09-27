@@ -424,7 +424,8 @@ def connection_info(base, env, cmd, ports, alias):
     for s in secret_values:
         if s:
             masked = masked.replace(quote(s, safe=""), "••••••").replace(s, "••••••")
-    return {"text": text, "masked": masked, "scope": scope, "has_secret": masked != text}
+    return {"text": text, "masked": masked, "scope": scope, "has_secret": masked != text,
+            "port": p if scope == "local" else None}
 
 
 # ---------------------------------------------------------------------------
@@ -663,17 +664,23 @@ def snapshot():
         groups.setdefault(key, []).append(c)
 
     # Compose projelerini hatırla: parçaları silinse bile listede kalsın, tekrar kurulabilsin.
+    # Hangi motorda (bağlamda) görüldüğü de saklanır; uzak sunucuya geçince yerel projeler orada görünmesin.
+    ctx = current_context_name()
+    remote = is_remote_engine()
     learned = {}
     for key, cs in groups.items():
         for c in cs:
             comp = c["compose"]
             if comp and comp["project"] == key and comp["files"]:
-                learned[key] = {"files": comp["files"], "dir": comp["dir"]}
+                learned[key] = {"files": comp["files"], "dir": comp["dir"], **({"context": ctx} if ctx else {})}
                 break
     if any(settings["projeler"].get(k) != v for k, v in learned.items()):
         settings = update_settings(lambda s: s["projeler"].update(learned))
 
     for key, proj in settings["projeler"].items():
+        pctx = proj.get("context")
+        if (pctx and ctx and pctx != ctx) or (not pctx and remote):
+            continue  # başka bir motorda hatırlanan proje
         files = proj.get("files") or []
         if key not in groups and files and all(os.path.isfile(f) for f in files):
             groups[key] = []
@@ -1469,10 +1476,22 @@ def _port_free(port):
     return True
 
 
+def is_remote_engine():
+    """Uzak bir motora mı bağlıyız? remote.py yüklenince gerçek denetimle değiştirilir."""
+    return False
+
+
+def current_context_name():
+    """Kullanılan Docker bağlamının adı. remote.py yüklenince önbellekli sürümle değiştirilir."""
+    return ""
+
+
 def pick_port(preferred, taken):
+    # Uzak motorda bu Mac'teki kapıların boş olup olmadığı önemsiz; sadece Docker'daki kapılara bakılır.
+    local_check = not is_remote_engine()
     port = preferred
     while port < 65000:
-        if port not in taken and _port_free(port):
+        if port not in taken and (not local_check or _port_free(port)):
             return port
         port += 1
     raise UserError(L("Boş kapı bulunamadı.", "No free port found."))
@@ -1740,6 +1759,9 @@ def engine_kind():
         if code == 0:
             endpoint = out.strip()
     endpoint = os.environ.get("DOCKER_HOST") or endpoint
+    if endpoint.startswith("ssh://") or (endpoint.startswith("tcp://")
+                                         and not re.match(r"tcp://(localhost|127\.0\.0\.1|\[::1\])(:|$)", endpoint)):
+        return "remote"
     if ".orbstack" in endpoint:
         return "orbstack"
     if "colima" in endpoint:
@@ -1756,7 +1778,7 @@ def engine_kind():
     return "diger"
 
 
-ENGINE_NAMES = {"orbstack": "OrbStack", "docker-desktop": "Docker Desktop", "colima": "Colima", "diger": "Docker"}
+ENGINE_NAMES = {"orbstack": "OrbStack", "docker-desktop": "Docker Desktop", "colima": "Colima", "remote": "Docker", "diger": "Docker"}
 
 
 def start_docker_desktop():

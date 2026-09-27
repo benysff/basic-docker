@@ -536,7 +536,9 @@ def _scope(addrs):
 
 def port_map():
     snap = ds.snapshot()
-    listening = _listening()
+    # Uzak motorda bu Mac'te dinleyen programlar ilgisiz; sadece Docker'ın kapıları gösterilir.
+    remote = ds.is_remote_engine()
+    listening = {} if remote else _listening()
     # Docker'ın yayınladığı kapılar (çalışan ve kapalı parçalar dahil)
     docker_ports = {}
     wanted = []  # kapalı parçaların istediği kapılar
@@ -590,7 +592,7 @@ def port_map():
         holder = by_port.get(port)
         if holder and not (holder["owner"] == "docker" and holder.get("container") == entry["container"]):
             conflicts.append({"port": port, "wanted_by": entry, "holder": holder})
-    return {"ports": rows, "conflicts": conflicts}
+    return {"ports": rows, "conflicts": conflicts, "remote": remote}
 
 
 def suggest_port(preferred):
@@ -601,8 +603,12 @@ def suggest_port(preferred):
     if not 1 <= preferred <= 65535:
         raise UserError(L("Kapı numarası 1 ile 65535 arasında olmalı.", "The port must be between 1 and 65535."))
     snap = ds.snapshot()
-    taken = set(snap["taken_ports"]) | set(_listening())
-    free = preferred not in taken and ds._port_free(preferred)
+    if ds.is_remote_engine():
+        taken = set(snap["taken_ports"])
+        free = preferred not in taken
+    else:
+        taken = set(snap["taken_ports"]) | set(_listening())
+        free = preferred not in taken and ds._port_free(preferred)
     return {"port": preferred, "free": free, "suggestion": preferred if free else ds.pick_port(preferred + 1, taken)}
 
 

@@ -140,6 +140,8 @@ async function openNew(step = "secim", ctx = {}) {
           </div>
           <div class="help">${mac ? L("“Seç…” ile klasörü bul ya da yolunu buraya yapıştırıp Enter'a bas.", "Find the folder with “Choose…” or paste its path here and press Enter.") : L("Klasörün tam yolunu yapıştır.", "Paste the full path of the folder.")}</div>
         </div>
+        ${S.data?.platform?.remote ? callout({ level: "warn", text: L(`Uzak Docker'a (${S.data.platform.remote.host}) kurulacak. Compose dosyası buradan okunur ama klasör bağlamaları (./klasor:/app gibi) sunucuda aynı yolu arar.`,
+          `This will be set up on the remote Docker (${S.data.platform.remote.host}). The compose file is read from here, but folder mounts (like ./folder:/app) look for the same path on the server.`) }) : ""}
         <div id="c-result" aria-live="polite"></div>
       </div>`,
       foot: html`<button class="btn left" data-back>${icon("chevronLeft")}${L("Geri", "Back")}</button><button class="btn primary" id="c-go" disabled>${icon("play")}${L("Kur ve başlat", "Set up and start")}</button>`,
@@ -615,6 +617,87 @@ async function openConnectToNetwork(c) {
           if (Router.current?.view === ContainerView) ContainerView.loadDetail();
         } catch (e) { formError(m, e.message); }
       });
+    },
+  });
+}
+
+// ---------- Uzak Docker ekle ----------------------------------------------------------
+function openAddRemote(after) {
+  let kind = "ssh";
+  const mac = S.data?.platform?.mac;
+  Modal.open({
+    title: L("Uzak Docker ekle", "Add remote Docker"),
+    sub: L("Başka bir bilgisayardaki (sunucu, ev sunucusu, sanal makine) Docker'ı buradan yönet.",
+      "Manage Docker on another machine (a server, home server or VM) from here."), size: "md",
+    body: html`<div class="form">
+      ${segmented("rm-kind", [{ id: "ssh", label: L("SSH (önerilen)", "SSH (recommended)"), icon: "key" }, { id: "tcp", label: "TCP", icon: "network" }], kind)}
+      <div id="rm-ssh" class="form">
+        <div class="field"><label for="rm-host">${L("Sunucu", "Server")} <span class="req" aria-hidden="true">*</span></label>
+          <input id="rm-host" placeholder="${L("kullanici@sunucu.com", "user@server.com")}" autocomplete="off" spellcheck="false">
+          <div class="help">${L("kullanici@adres, bir IP ya da ~/.ssh/config'teki bir ad. VS Code Remote-SSH'te yazdığın adresin aynısı.",
+            "user@address, an IP or a name from ~/.ssh/config. The same address you use in VS Code Remote-SSH.")}</div></div>
+        <div class="row2">
+          <div class="field"><label for="rm-port">${L("SSH kapısı", "SSH port")}</label><input id="rm-port" inputmode="numeric" placeholder="22"></div>
+          <div class="field"><label for="rm-name">${L("Bağlantı adı", "Connection name")}</label><input id="rm-name" placeholder="${L("otomatik", "automatic")}" autocomplete="off" spellcheck="false"></div>
+        </div>
+        ${callout({ level: "tip", text: L("Şifre sorulmaz; bağlantı SSH anahtarınla kurulur. Terminal'de ssh kullanici@sunucu ile şifresiz girebiliyorsan hazırsın. Sunucuda Docker kurulu, kullanıcın da docker grubunda olmalı.",
+          "No password is asked; the connection uses your SSH key. If ssh user@server works in Terminal without a password, you're ready. Docker must be installed on the server and your user must be in the docker group.") })}
+      </div>
+      <div id="rm-tcp" class="form" hidden>
+        <div class="row2">
+          <div class="field"><label for="rm-thost">${L("Adres", "Address")} <span class="req" aria-hidden="true">*</span></label><input id="rm-thost" placeholder="192.168.1.20" autocomplete="off" spellcheck="false"></div>
+          <div class="field"><label for="rm-tport">${L("Kapı", "Port")}</label><input id="rm-tport" inputmode="numeric" placeholder="2376"></div>
+        </div>
+        <div class="field"><label for="rm-tls">${L("TLS sertifika klasörü", "TLS certificate folder")}</label>
+          <div class="input-row"><input id="rm-tls" placeholder="~/.docker/${L("sunucu", "server")}" autocomplete="off" spellcheck="false">
+            ${mac ? html`<button class="btn" id="rm-tls-pick">${icon("folder")}${L("Seç…", "Choose…")}</button>` : ""}</div>
+          <div class="help">${L("İçinde ca.pem, cert.pem ve key.pem olan klasör.", "A folder containing ca.pem, cert.pem and key.pem.")}</div></div>
+        <div class="field"><label for="rm-tname">${L("Bağlantı adı", "Connection name")}</label><input id="rm-tname" placeholder="${L("otomatik", "automatic")}" autocomplete="off" spellcheck="false"></div>
+        ${callout({ level: "warn", text: L("Sertifikasız TCP bağlantısı şifrelenmez; ağdaki herkes o Docker'ı yönetebilir. Sadece güvendiğin ağda ya da VPN içinde kullan. Mümkünse SSH seç.",
+          "A TCP connection without certificates is unencrypted; anyone on the network can control that Docker. Only use it on a network you trust or over a VPN. Prefer SSH when you can.") })}
+      </div>
+      <label class="check"><input type="checkbox" id="rm-use" checked><span><b>${L("Bağlanınca buna geç", "Switch to it after connecting")}</b></span></label>
+      <div id="f-err"></div>
+    </div>`,
+    foot: html`<button class="btn" data-close>${L("Vazgeç", "Cancel")}</button><button class="btn primary" id="rm-go">${icon("link")}${L("Bağlan", "Connect")}</button>`,
+    onMount(m) {
+      m.addEventListener("click", (e) => {
+        const seg = e.target.closest("[data-seg=rm-kind]");
+        if (!seg) return;
+        kind = seg.dataset.val;
+        $$("[data-seg=rm-kind]", m).forEach((b) => { b.classList.toggle("active", b === seg); b.setAttribute("aria-checked", String(b === seg)); });
+        $("#rm-ssh", m).hidden = kind !== "ssh";
+        $("#rm-tcp", m).hidden = kind !== "tcp";
+        $(kind === "ssh" ? "#rm-host" : "#rm-thost", m).focus();
+      });
+      $("#rm-tls-pick", m)?.addEventListener("click", async () => {
+        try { const r = await api("/api/klasor-sec", {}); if (r.yol) $("#rm-tls", m).value = r.yol; } catch (e) { flash(e.message, true); }
+      });
+      const go = $("#rm-go", m);
+      const submit = async () => {
+        const v = (id) => $(id, m).value.trim();
+        const body = kind === "ssh"
+          ? { tur: "ssh", sunucu: v("#rm-host"), kapi: v("#rm-port"), ad: v("#rm-name") }
+          : { tur: "tcp", sunucu: v("#rm-thost"), kapi: v("#rm-tport"), tls: v("#rm-tls"), ad: v("#rm-tname") };
+        body.gec = $("#rm-use", m).checked;
+        go.disabled = true;
+        go.innerHTML = String(html`<span class="spinner"></span>${L("Bağlanılıyor…", "Connecting…")}`);
+        $("#f-err", m).innerHTML = "";
+        try {
+          const r = (await api("/api/uzak/ekle", body)).sonuc;
+          Modal.close();
+          flash(L(`Bağlandı: ${r.name} · Docker ${r.version}`, `Connected: ${r.name} · Docker ${r.version}`));
+          if (body.gec) await afterContextChange();
+          else after?.();
+        } catch (e) {
+          go.disabled = false;
+          go.innerHTML = String(html`${icon("link")}${L("Bağlan", "Connect")}`);
+          formError(m, e.message);
+        }
+      };
+      go.addEventListener("click", submit);
+      m.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.tagName === "INPUT") { e.preventDefault(); submit(); } });
+      setTimeout(() => $("#rm-host", m)?.focus(), 50);
     },
   });
 }

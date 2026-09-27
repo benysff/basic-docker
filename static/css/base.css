@@ -203,6 +203,7 @@ mark { background: rgba(246, 187, 79, .35); color: inherit; border-radius: 2px; 
 .min0 { min-width: 0; }
 .grow { flex: 1; min-width: 0; }
 .txt-err { color: var(--err); }
+.txt-ok { color: var(--ok); }
 .txt-warn { color: var(--warn); display: inline-flex; gap: 4px; align-items: center; }
 .txt-warn .i { width: 13px; height: 13px; }
 .wrap { flex-wrap: wrap; }
