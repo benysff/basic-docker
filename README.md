@@ -1,5 +1,7 @@
 # Basic Docker
 
+**Türkçe** · [English](README.en.md)
+
 **Docker'ı mala anlatır gibi yöneten, Mac'e özel (native) uygulama.**
 5 konteynerli bir proje ekranda tek kart olarak görünür. Tek tuşla hepsi açılır, tek tuşla hepsi kapanır.
 Bir şey bozulunca da **neden bozulduğunu sade Türkçeyle söyler.**
@@ -9,6 +11,7 @@ Bir şey bozulunca da **neden bozulduğunu sade Türkçeyle söyler.**
 Docker Desktop güçlü ama kalabalık. Bir projede `proje-web-1`, `proje-db-1`, `proje-redis-1`, `proje-worker-1` gibi
 isimler birikince neyin ne olduğu karışıyor. Basic Docker bunları **uygulama** olarak toplar ve her parçanın ne işe
 yaradığını sade Türkçeyle söyler. **Docker Desktop, OrbStack ve Colima** ile çalışır.
+Arayüz **Türkçe ve İngilizce**; dili Sistem sayfasından ya da ⌘K → "Switch to English" ile değiştirirsin.
 
 ## Neler yapar?
 
@@ -33,14 +36,22 @@ yaradığını sade Türkçeyle söyler. **Docker Desktop, OrbStack ve Colima** 
 - **Etkinlik geçmişi.** Docker bu geçmişi kısa tutar; Basic Docker açıkken olanları (başladı, durdu, çöktü, belleği yetmedi…) kaydeder. Bir parça beklenmedik şekilde çökerse **macOS bildirimi** gönderir.
 - **Kalıp güncelleme denetimi.** İndirdiğin kalıpların Docker Hub'da yeni sürümü var mı? Intel (amd64) için yapılmış, Mac'inde emülasyonla yavaş çalışan kalıpları da işaretler. Bir kalıbın çok sayıdaki eski sürümünü tek tuşla temizler.
 - **Sade dil ↔ teknik terimler.** "Parça, kalıp, veri kutusu" yerine istersen "konteyner, imaj, volume".
+- **Türkçe ve İngilizce.** Bütün arayüz, teşhis açıklamaları ve hazır parça listesi iki dilde.
+- **Uzak Docker (VS Code'daki gibi).** Sunucundaki, ev sunucundaki ya da sanal makinendeki Docker'ı SSH ile ekle,
+  buradan yönet. Şifre sorulmaz, SSH anahtarınla bağlanılır; bütün komutlar tek SSH bağlantısını paylaşır.
+  Uzak bir parçanın bağlantısına tıklayınca **SSH tüneli** kendiliğinden açılır: sunucuda 3000'de çalışan site bu Mac'te
+  `localhost:3000`'de açılır. Veritabanı gibi kapılar için tek tıkla tünel açılır. Bağlanamazsa sebebini söyler
+  (anahtar tanımlı değil, sunucuda Docker yok, kullanıcı docker grubunda değil, tünel izni kapalı…).
+
+![Teşhis: parça neden kapandı?](docs/teshis.png)
 
 ### Diğer her şey
 
 - **Parçalar:** bütün konteynerler tek tabloda; sıralama, filtre ve toplu başlat/durdur/sil. Duraklat, zorla kapat, yeniden başlama kuralı, başka bir ağa bağla, ortam değişkenleri (şifreler gizli) ve ham `docker inspect` bilgisi.
 - **Kalıplar:** indir, çalıştır, katmanlarını incele, sil. **Veri kutuları:** oluştur, yedekle, sil. **Ağlar:** hangi parça hangi ağda, hangi IP ve adla; oluştur, bağla, çıkar, sil.
-- **Sistem:** motor bilgisi (OrbStack / Docker Desktop / Colima), sürümler, birden fazla Docker varsa bağlam (context) değiştirme. Motor kapalıysa doğru uygulamayı (OrbStack'i ya da Docker Desktop'ı) açar.
+- **Sistem:** motor bilgisi (OrbStack / Docker Desktop / Colima / uzak sunucu), sürümler, bağlantılar arasında geçiş, bağlantı denemesi (gecikme ve sürüm), açık SSH tünelleri. Motor kapalıysa doğru uygulamayı (OrbStack'i ya da Docker Desktop'ı) açar; uzak sunucuya ulaşılamazsa tek tıkla bu Mac'teki Docker'a döner.
 - **Her yerde arama: ⌘K.** Uygulama, parça, sayfa ya da işlem yaz; Enter'la yap ("blog başlat", "temizlik"…). Diğer kısayollar: ⌘N yeni ekle, ⌘1…⌘9 sayfalar, `/` arama.
-- Açık / koyu tema (macOS'u izler), dar kenar çubuğu, küçük pencerede de düzgün görünüm.
+- Açık / koyu tema (macOS'u izler), Türkçe / İngilizce arayüz, dar kenar çubuğu, küçük pencerede de düzgün görünüm.
 
 ### Yeni ekleme üç yoldan yapılır
 
@@ -72,7 +83,7 @@ Bundan sonra Launchpad'den ya da Spotlight'tan (⌘ + boşluk → *Basic Docker*
 
 **Yeni projem otomatik görünür mü?**
 `docker compose up` ile çalıştırdıysan evet, kendiliğinden tek kart olur. Konteynerleri tek tek `docker run` ile
-açtıysan ayrı kartlar olarak görünürler; ayrıntılardaki **Uygulamaya ekle** ile birleştirebilirsin.
+açtıysan ayrı kartlar olarak görünürler; ayrıntılardaki **Bir uygulamaya ekle** ile birleştirebilirsin.
 
 **`docker compose down` yaparsam kart kaybolur mu?**
 Hayır. Compose projeleri hatırlanır. Kartta Başlat'a basınca proje klasöründen yeniden kurulur.
@@ -84,6 +95,12 @@ işaretlemen gerekir. Proje klasörüne ve kodlarına hiçbir zaman dokunulmaz. 
 **Yedekler nerede durur?**
 `~/Documents/Basic Docker Yedekleri` klasöründe (Sistem sayfasından değiştirilebilir). Veri kutusu yedekleri için
 bir kere küçük bir yardımcı kalıp (`alpine`, ~3 MB) kullanılır; bilgisayarında yoksa indirilir.
+
+**Uzak bir sunucudaki Docker'a nasıl bağlanırım?**
+Sistem → **Uzak Docker ekle** → sunucunun adresini yaz (`kullanici@sunucu`, bir IP ya da `~/.ssh/config`'teki bir ad).
+Terminal'de `ssh kullanici@sunucu` şifresiz çalışıyorsa hazırsın; sunucuda Docker kurulu, kullanıcın da `docker`
+grubunda olmalı. Bağlantı bir Docker bağlamı (context) olarak kaydedilir, yani terminaldeki `docker` komutu da aynı
+sunucuyu görür. Geri dönmek için Sistem sayfasından bu Mac'teki motoru seç.
 
 **Güvenli mi?**
 Hazır parçaların kapıları sadece senin bilgisayarına açılır (`127.0.0.1`), ağdaki başkaları erişemez.
@@ -108,8 +125,9 @@ Konteynerleri şu sırayla gruplar:
 | `app.py` | Pencereyi açar ve arayüzün çağırdığı işlemleri Python'a bağlar |
 | `docker_service.py` | Uygulamalar ve parçalar: okuma, gruplama, açıklamalar, başlat/durdur/sil/oluştur, setler |
 | `resources.py` | Kalıplar, veri kutuları, ağlar, kapı haritası, temizlik, motor bilgisi |
+| `remote.py` | Uzak Docker: SSH / TCP bağlantısı ekleme, bağlantı denemesi, SSH tünelleri |
 | `terminal.py` | Uygulama içi terminal: `docker exec -it` oturumlarını sözde terminal (PTY) üzerinden yönetir |
-| `insights.py` | Teşhis: çıkış kodları ve kayıtlardaki bilinen hatalar → sade Türkçe açıklama |
+| `insights.py` | Teşhis: çıkış kodları ve kayıtlardaki bilinen hatalar → sade Türkçe (ya da İngilizce) açıklama |
 | `backups.py` | Veri kutusu yedeği, veritabanı dökümü ve geri yükleme |
 | `monitor.py` | Arka planda canlı kaynak kullanımı ve etkinlik geçmişi (çökme bildirimi) |
 | `catalog.py` | Hazır parça listesi |
@@ -129,6 +147,8 @@ etkinlik geçmişi `~/.basic-docker/etkinlik.jsonl` dosyasında durur.
 - Yeni bir hazır parça eklemek için `catalog.py`'ye bir kayıt eklemen yeterli.
 - Yeni bir hata açıklaması eklemek için `insights.py`'deki `PATTERNS` listesine bir satır ekle.
 - `index.html`'de andığın bütün `css/` ve `js/` dosyaları açılışta tek sayfaya gömülür; derleme adımı yok.
+- Arayüz metinleri iki dilde yazılır: JavaScript'te `L("Türkçe", "English")`, Python'da `ds.L("Türkçe", "English")`.
+  Hazır parçaların İngilizcesi `catalog.py`'de `_en` ile biten alanlarda durur.
 
 ## Lisans
 

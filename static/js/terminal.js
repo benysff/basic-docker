@@ -95,7 +95,7 @@ class TermSession {
       if (r.bitti) {
         this.sid = null;
         const code = r.kod;
-        this.term.write(`\r\n\x1b[2m[Oturum kapandı${code != null && code !== 0 ? ` · çıkış kodu ${code}` : ""}. Yeniden bağlanmak için Enter'a bas.]\x1b[0m\r\n`);
+        this.term.write(`\r\n\x1b[2m[${L("Oturum kapandı", "Session closed")}${code != null && code !== 0 ? ` · ${L("çıkış kodu", "exit code")} ${code}` : ""}. ${L("Yeniden bağlanmak için Enter'a bas.", "Press Enter to reconnect.")}]\x1b[0m\r\n`);
         this.setState("kapandi", { exitCode: code });
         return;
       }
@@ -131,7 +131,7 @@ class TermSession {
   /** Hazır komut düğmeleri için: komutu yazıp Enter'a basar. */
   run(command) {
     if (this.state !== "acik") {
-      flash("Terminal bağlı değil. Önce bağlan.", true);
+      flash(L("Terminal bağlı değil. Önce bağlan.", "The terminal isn't connected. Connect first."), true);
       return;
     }
     this.input(command + "\r");

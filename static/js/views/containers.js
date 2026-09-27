@@ -16,11 +16,12 @@ const ContainersView = {
       <div class="page">
         ${pageHead({
           title: T("container", true),
-          desc: "Bütün parçalar tek listede. Birden fazlasını seçip hepsini birlikte başlatabilir, durdurabilir ya da silebilirsin.",
-          actions: html`<button class="btn primary" data-global="yeni">${icon("plus")}Yeni ekle</button>`,
+          desc: L("Bütün parçalar tek listede. Birden fazlasını seçip hepsini birlikte başlatabilir, durdurabilir ya da silebilirsin.",
+            "Every container in one list. Select several to start, stop or delete them together."),
+          actions: html`<button class="btn primary" data-global="yeni">${icon("plus")}${L("Yeni ekle", "Add new")}</button>`,
         })}
         <div class="toolbar">
-          ${searchBox("ct-search", `${T("container")}, ${Tl("image")} ya da ${Tl("app")} ara…`, this.query)}
+          ${searchBox("ct-search", L(`${T("container")}, ${Tl("image")} ya da ${Tl("app")} ara…`, "Search containers, images or apps…"), this.query)}
           <div id="ct-filter"></div>
         </div>
         <div id="ct-bulk"></div>
@@ -47,9 +48,9 @@ const ContainersView = {
   },
 
   list() {
-    const qq = this.query.trim().toLocaleLowerCase("tr");
+    const qq = this.query.trim().toLocaleLowerCase(loc());
     let list = allContainers();
-    if (qq) list = list.filter((c) => [c.name, c.image, c.role_title, c.app.name, c.service].join(" ").toLocaleLowerCase("tr").includes(qq));
+    if (qq) list = list.filter((c) => [c.name, c.image, c.role_title, c.app.name, c.service].join(" ").toLocaleLowerCase(loc()).includes(qq));
     if (this.filter === "calisan") list = list.filter((c) => c.running);
     if (this.filter === "kapali") list = list.filter((c) => !c.running);
     if (this.filter === "sorunlu") list = list.filter((c) => c.level === "err" || c.state === "restarting");
@@ -110,15 +111,15 @@ const ContainersView = {
     if (!items.length) return;
     if (act === "sil") {
       const r = await confirmDialog({
-        title: `${items.length} ${Tl("container")} silinsin mi?`, danger: true, confirmText: "Sil", icon: "trash",
-        text: `Seçilen parçalar durdurulup kaldırılacak: ${items.slice(0, 6).map((c) => c.name).join(", ")}${items.length > 6 ? " …" : ""}`,
-        checkbox: { label: "Verilerini de sil", help: "Parçaların veri kutuları da kalıcı olarak silinir. Geri alınamaz." },
+        title: L(`${items.length} ${Tl("container")} silinsin mi?`, `Delete ${plural(items.length, "container")}?`), danger: true, confirmText: L("Sil", "Delete"), icon: "trash",
+        text: L("Seçilen parçalar durdurulup kaldırılacak: ", "The selected containers will be stopped and removed: ") + `${items.slice(0, 6).map((c) => c.name).join(", ")}${items.length > 6 ? " …" : ""}`,
+        checkbox: { label: L("Verilerini de sil", "Delete their data too"), help: L("Parçaların veri kutuları da kalıcı olarak silinir. Geri alınamaz.", "Their volumes are deleted permanently too. This cannot be undone.") },
       });
       if (!r) return;
       await runJob("/api/parcalar/toplu", { idler: items.map((c) => c.id), islem: "sil", veriler: r.checked });
     } else {
       const todo = act === "baslat" ? items.filter((c) => !c.up || c.state === "paused") : items.filter((c) => c.up);
-      if (!todo.length) return flash(act === "baslat" ? "Seçilenlerin hepsi zaten çalışıyor." : "Seçilenlerin hepsi zaten kapalı.");
+      if (!todo.length) return flash(act === "baslat" ? L("Seçilenlerin hepsi zaten çalışıyor.", "All selected containers are already running.") : L("Seçilenlerin hepsi zaten kapalı.", "All selected containers are already stopped."));
       await runJob("/api/parcalar/toplu", { idler: todo.map((c) => c.id), islem: act });
     }
     this.selected.clear();
@@ -130,30 +131,30 @@ const ContainersView = {
     const all = allContainers();
     for (const id of [...this.selected]) if (!all.some((c) => c.id === id)) this.selected.delete(id);
     patch($("#ct-filter", this.root), segmented("ct", [
-      { id: "hepsi", label: "Tümü", count: all.length },
-      { id: "calisan", label: "Çalışan", count: all.filter((c) => c.running).length },
-      { id: "kapali", label: "Kapalı", count: all.filter((c) => !c.running).length },
-      { id: "sorunlu", label: "Sorunlu", count: all.filter((c) => c.level === "err" || c.state === "restarting").length },
+      { id: "hepsi", label: L("Tümü", "All"), count: all.length },
+      { id: "calisan", label: L("Çalışan", "Running"), count: all.filter((c) => c.running).length },
+      { id: "kapali", label: L("Kapalı", "Stopped"), count: all.filter((c) => !c.running).length },
+      { id: "sorunlu", label: L("Sorunlu", "Problems"), count: all.filter((c) => c.level === "err" || c.state === "restarting").length },
     ], this.filter));
 
     const n = this.selected.size;
     patch($("#ct-bulk", this.root), n ? html`
-      <div class="bulk-bar" role="region" aria-label="Toplu işlemler">
-        <b>${n} seçili</b>
-        <button class="btn sm go" data-bulk="baslat">${icon("play")}Başlat</button>
-        <button class="btn sm" data-bulk="durdur">${icon("stop")}Durdur</button>
-        <button class="btn sm" data-bulk="yeniden">${icon("restart")}Yeniden başlat</button>
-        <button class="btn sm danger" data-bulk="sil">${icon("trash")}Sil…</button>
+      <div class="bulk-bar" role="region" aria-label="${L("Toplu işlemler", "Bulk actions")}">
+        <b>${L(`${n} seçili`, `${n} selected`)}</b>
+        <button class="btn sm go" data-bulk="baslat">${icon("play")}${L("Başlat", "Start")}</button>
+        <button class="btn sm" data-bulk="durdur">${icon("stop")}${L("Durdur", "Stop")}</button>
+        <button class="btn sm" data-bulk="yeniden">${icon("restart")}${L("Yeniden başlat", "Restart")}</button>
+        <button class="btn sm danger" data-bulk="sil">${icon("trash")}${L("Sil…", "Delete…")}</button>
         <div class="toolbar-spacer"></div>
-        <button class="link" data-clear-sel>Seçimi temizle</button>
+        <button class="link" data-clear-sel>${L("Seçimi temizle", "Clear selection")}</button>
       </div>` : "");
 
     const list = this.list();
     if (!list.length) {
       return patch($("#ct-body", this.root), emptyState({
         icon: "box", compact: true,
-        title: all.length ? "Eşleşen bir şey yok" : `Hiç ${Tl("container")} yok`,
-        text: all.length ? "Aramayı ya da filtreyi değiştir." : "Yeni ekle ile bir veritabanı ya da proje kurabilirsin.",
+        title: all.length ? L("Eşleşen bir şey yok", "Nothing matches") : L(`Hiç ${Tl("container")} yok`, "No containers"),
+        text: all.length ? L("Aramayı ya da filtreyi değiştir.", "Change the search or the filter.") : L("Yeni ekle ile bir veritabanı ya da proje kurabilirsin.", "Use Add new to install a database or a project."),
       }));
     }
     const allSel = list.every((c) => this.selected.has(c.id));
@@ -166,23 +167,23 @@ const ContainersView = {
       <div class="table-wrap">
         <table class="table">
           <thead><tr>
-            <th class="check-col"><input type="checkbox" data-sel-all aria-label="Hepsini seç" ${allSel ? raw("checked") : ""}></th>
+            <th class="check-col"><input type="checkbox" data-sel-all aria-label="${L("Hepsini seç", "Select all")}" ${allSel ? raw("checked") : ""}></th>
             ${sortTh("name", T("container"))}
             ${sortTh("app", T("app"), "col-md")}
-            ${sortTh("state", "Durum")}
+            ${sortTh("state", L("Durum", "Status"))}
             ${sortTh("image", T("image"), "col-xl")}
             <th class="col-lg">${T("port", true)}</th>
             <th class="num col-md" aria-sort="${["cpu", "mem"].includes(this.sort.key) ? (this.sort.dir > 0 ? "ascending" : "descending") : "none"}">
-              <span class="th-pair"><button class="th-sort ${this.sort.key === "cpu" ? "on" : ""}" data-sort="cpu" title="İşlemciye göre sırala">İşlemci</button> / <button class="th-sort ${this.sort.key === "mem" ? "on" : ""}" data-sort="mem" title="Belleğe göre sırala">Bellek</button></span></th>
-            ${sortTh("time", "Süre", "col-xl")}
-            <th class="actions-col"><span class="sr">İşlemler</span></th>
+              <span class="th-pair"><button class="th-sort ${this.sort.key === "cpu" ? "on" : ""}" data-sort="cpu" title="${L("İşlemciye göre sırala", "Sort by CPU")}">${L("İşlemci", "CPU")}</button> / <button class="th-sort ${this.sort.key === "mem" ? "on" : ""}" data-sort="mem" title="${L("Belleğe göre sırala", "Sort by memory")}">${L("Bellek", "Memory")}</button></span></th>
+            ${sortTh("time", L("Süre", "Time"), "col-xl")}
+            <th class="actions-col"><span class="sr">${L("İşlemler", "Actions")}</span></th>
           </tr></thead>
           <tbody>${list.map((c) => {
             const s = S.stats[c.name];
             const lvl = containerLevel(c);
             return html`
               <tr class="row-link ${this.selected.has(c.id) ? "selected" : ""}" data-open-part="${c.id}">
-                <td class="check-col"><input type="checkbox" data-sel="${c.id}" aria-label="${c.name} seç" ${this.selected.has(c.id) ? raw("checked") : ""}></td>
+                <td class="check-col"><input type="checkbox" data-sel="${c.id}" aria-label="${L(`${c.name} seç`, `Select ${c.name}`)}" ${this.selected.has(c.id) ? raw("checked") : ""}></td>
                 <td><div class="cell-main">${kindTile(c.kind, lvl)}<div class="min0"><a class="strong" href="${link(`/parca/${c.id}`)}">${c.role_title}</a><div class="muted small mono ellipsis cell-clip" title="${c.name} · ${c.image}">${c.name}</div></div></div></td>
                 <td class="col-md">${c.app.source === "single" ? html`<span class="muted">—</span>` : html`<a href="${link(`/uygulama/${c.app.key}`)}">${c.app.name}</a>`}</td>
                 <td>${badge(lvl, c.status_text)}</td>
@@ -192,10 +193,10 @@ const ContainersView = {
                 <td class="small muted col-xl">${c.running ? fmt.since(c.started_at) : fmt.ago(c.finished_at)}</td>
                 <td class="actions-col"><div class="row-actions">
                   ${activeJob(c.app.key) ? html`<span class="spinner"></span>` : c.up && c.state !== "paused"
-                    ? html`<button class="icon-btn sm" data-cact="durdur" data-id="${c.id}" aria-label="Durdur" title="Durdur">${icon("stop")}</button>`
-                    : html`<button class="icon-btn sm go" data-cact="baslat" data-id="${c.id}" aria-label="Başlat" title="Başlat">${icon("play")}</button>`}
+                    ? html`<button class="icon-btn sm" data-cact="durdur" data-id="${c.id}" aria-label="${L("Durdur", "Stop")}" title="${L("Durdur", "Stop")}">${icon("stop")}</button>`
+                    : html`<button class="icon-btn sm go" data-cact="baslat" data-id="${c.id}" aria-label="${L("Başlat", "Start")}" title="${L("Başlat", "Start")}">${icon("play")}</button>`}
                   <a class="icon-btn sm" href="${link(`/parca/${c.id}/kayitlar`)}" aria-label="${T("logs")}" title="${T("logs")}">${icon("logs")}</a>
-                  <button class="icon-btn sm" data-cact="menu" data-id="${c.id}" aria-label="Diğer işlemler" aria-haspopup="menu">${icon("more")}</button>
+                  <button class="icon-btn sm" data-cact="menu" data-id="${c.id}" aria-label="${L("Diğer işlemler", "More actions")}" aria-haspopup="menu">${icon("more")}</button>
                 </div></td>
               </tr>`;
           })}</tbody>

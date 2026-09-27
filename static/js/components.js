@@ -10,7 +10,7 @@ const LEVEL_OF_APP = { running: "ok", partial: "warn", problem: "err", stopped: 
 function pageHead({ title, desc = "", actions = "", crumbs = null, lead = "" }) {
   return html`
     <header class="page-head">
-      ${crumbs ? html`<nav class="crumbs" aria-label="Konum">${crumbs.map((c, i) => i < crumbs.length - 1
+      ${crumbs ? html`<nav class="crumbs" aria-label="${L("Konum", "Breadcrumb")}">${crumbs.map((c, i) => i < crumbs.length - 1
         ? html`<a href="${c.href}">${c.label}</a>${icon("chevronRight", "sep")}`
         : html`<span aria-current="page">${c.label}</span>`)}</nav>` : ""}
       <div class="page-title-row">
@@ -56,13 +56,13 @@ function emptyState({ icon: ic = "box", title, text = "", action = "", compact =
 
 function errorState(message, retryAttr = "data-retry") {
   return emptyState({
-    icon: "alert", title: "Bir şeyler ters gitti", text: message,
-    action: html`<button class="btn" ${raw(retryAttr)}>${icon("refresh")}Tekrar dene</button>`,
+    icon: "alert", title: L("Bir şeyler ters gitti", "Something went wrong"), text: message,
+    action: html`<button class="btn" ${raw(retryAttr)}>${icon("refresh")}${L("Tekrar dene", "Try again")}</button>`,
   });
 }
 
 function skeletonRows(n = 6, cls = "") {
-  return html`<div class="skeleton-list ${cls}" aria-busy="true" aria-label="Yükleniyor">${Array.from({ length: n }, (_, i) =>
+  return html`<div class="skeleton-list ${cls}" aria-busy="true" aria-label="${L("Yükleniyor", "Loading")}">${Array.from({ length: n }, (_, i) =>
     html`<div class="skeleton-row" style="--d:${i * 60}ms"><span class="sk sk-a"></span><span class="sk sk-b"></span><span class="sk sk-c"></span></div>`)}</div>`;
 }
 
@@ -90,7 +90,7 @@ function tabs(items, active, attr = "data-tab") {
       ${items.filter(Boolean).map((t) => html`
         <button class="tab ${t.id === active ? "active" : ""}" role="tab" aria-selected="${t.id === active}" ${raw(attr)}="${t.id}">
           ${t.icon ? icon(t.icon) : ""}${t.label}${t.count !== undefined && t.count !== null ? html`<span class="tab-count">${t.count}</span>` : ""}
-          ${t.alert ? html`<span class="tab-alert" aria-label="Dikkat">${dot(t.alert)}</span>` : ""}
+          ${t.alert ? html`<span class="tab-alert" aria-label="${L("Dikkat", "Attention")}">${dot(t.alert)}</span>` : ""}
         </button>`)}
     </nav>`;
 }
@@ -139,10 +139,10 @@ function kv(rows) {
 }
 
 function linkChip(url, label, { dim = false, title = "" } = {}) {
-  return html`<a class="chip link-chip ${dim ? "dim" : ""}" href="${url}" target="_blank" rel="noopener" title="${title || "Tarayıcıda aç"}">${icon("external")}${label}</a>`;
+  return html`<a class="chip link-chip ${dim ? "dim" : ""}" href="${url}" target="_blank" rel="noopener" title="${title || L("Tarayıcıda aç", "Open in browser")}">${icon("external")}${label}</a>`;
 }
 
-function copyBtn(text, label = "Kopyala", cls = "sm") {
+function copyBtn(text, label = L("Kopyala", "Copy"), cls = "sm") {
   return html`<button class="btn ${cls}" data-copy="${text}">${icon("copy")}${label}</button>`;
 }
 
@@ -186,7 +186,18 @@ function containerLevel(c) {
   return c.level;
 }
 
+/** Uzak SSH motorunda bağlantı adresi sunucudadır; bilgisayardaki kod için tünel gerekir. */
+function connNote(conn) {
+  if (conn.scope !== "local") return "";
+  const r = S.data?.platform?.remote;
+  if (!r) return "";
+  if (r.kind === "tcp") return L(`Adres sunucuda: bilgisayarından bağlanırken localhost yerine ${r.host} yaz.`, `This address is on the server: use ${r.host} instead of localhost when connecting from your computer.`);
+  return html`${L("Bu adres sunucuda çalışır. Bilgisayarındaki kod bağlansın diye tünel aç:", "This address works on the server. Open a tunnel so code on your computer can connect:")}
+    <button class="btn xs" data-tunnel="${conn.port}">${icon("link")}${L("Bu Mac'e tünel aç", "Tunnel to this Mac")}</button>`;
+}
+
 /** Motoru açma düğmesinin yazısı (Türkçe ekler motor adına göre değişir). */
 function engineOpenLabel(kind) {
-  return { orbstack: "OrbStack'i aç", "docker-desktop": "Docker Desktop'ı aç", colima: "Colima'yı başlat" }[kind] || "Docker'ı aç";
+  if (isEN()) return { orbstack: "Open OrbStack", "docker-desktop": "Open Docker Desktop", colima: "Start Colima", remote: "Switch to local Docker" }[kind] || "Open Docker";
+  return { orbstack: "OrbStack'i aç", "docker-desktop": "Docker Desktop'ı aç", colima: "Colima'yı başlat", remote: "Bu Mac'teki Docker'a dön" }[kind] || "Docker'ı aç";
 }

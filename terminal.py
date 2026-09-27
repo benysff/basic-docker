@@ -160,7 +160,7 @@ class Session:
 def _get(sid):
     s = _sessions.get(sid or "")
     if not s:
-        raise ds.UserError("Terminal oturumu bulunamadı. Yeniden bağlan.")
+        raise ds.UserError(ds.L("Terminal oturumu bulunamadı. Yeniden bağlan.", "Terminal session not found. Reconnect."))
     return s
 
 
@@ -176,16 +176,16 @@ def _cleanup():
 def open_session(cid, cols=80, rows=24, user=""):
     _, c = ds.get_container(cid)
     if not c["running"]:
-        raise ds.UserError("Parça kapalı. Terminal açmak için önce başlat.")
+        raise ds.UserError(ds.L("Parça kapalı. Terminal açmak için önce başlat.", "The container is stopped. Start it to open a terminal."))
     user = (user or "").strip()
     if user and not ds.NAME_RE.match(user):
-        raise ds.UserError("Geçersiz kullanıcı adı.")
+        raise ds.UserError(ds.L("Geçersiz kullanıcı adı.", "Invalid user name."))
     if not ds.DOCKER:
-        raise ds.UserError("Docker bulunamadı.")
+        raise ds.UserError(ds.L("Docker bulunamadı.", "Docker was not found."))
     with _lock:
         _cleanup()
         if len(_sessions) >= MAX_SESSIONS:
-            raise ds.UserError("Çok fazla açık terminal var. Birkaçını kapatıp tekrar dene.")
+            raise ds.UserError(ds.L("Çok fazla açık terminal var. Birkaçını kapatıp tekrar dene.", "Too many terminals are open. Close a few and try again."))
         s = Session(c["name"], cols, rows, user or None)
         _sessions[s.id] = s
     return {"sid": s.id, "parca": c["name"]}

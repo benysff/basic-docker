@@ -332,6 +332,9 @@ html.sb-narrow .sticky-foot { left: calc(var(--sb-narrow) + 50%); transform: tra
 .ctx-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
 .ctx-list li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r); }
 .ctx-list li.current { border-color: var(--accent-line); background: var(--accent-weak); }
+.ctx-list .row-actions { flex-wrap: wrap; }
+.tunnel-form { margin-top: 12px; max-width: 420px; }
+@media (max-width: 640px) { .ctx-list li { flex-wrap: wrap; } .ctx-list .row-actions { width: 100%; justify-content: flex-start; } }
 .setting { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px dashed var(--line); flex-wrap: wrap; }
 .setting:last-child { border-bottom: 0; }
 .setting > div:first-child { flex: 1 1 220px; min-width: 0; }

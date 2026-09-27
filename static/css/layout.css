@@ -129,7 +129,9 @@ html.sb-narrow .sb-item.active::before { left: -8px; }
 html.sb-narrow .sb-empty-set { justify-content: center; }
 
 /* ---------- Ana alan ---------- */
-.main { overflow-y: auto; overflow-x: hidden; min-width: 0; scroll-behavior: smooth; }
+/* Motor kapalı ekranı aynı hücreye oturur; ikisi de sabit yerleşmezse ikinci satır açılıp kenar çubuğu yarıya iner. */
+.main { grid-column: 2; grid-row: 1; overflow-y: auto; overflow-x: hidden; min-width: 0; scroll-behavior: smooth; }
+.sidebar { grid-column: 1; grid-row: 1; }
 .main:focus { outline: none; }
 .page { max-width: var(--page-max); margin: 0 auto; padding: 28px 36px 72px; animation: page-in var(--t-slow) var(--ease); }
 @keyframes page-in { from { opacity: 0; transform: translateY(4px); } }
@@ -258,7 +260,7 @@ body.engine-down .main { visibility: hidden; }
   .sb-item .sb-badge { position: static; }
   .sb-scrim { display: block; position: fixed; inset: 0; background: var(--scrim); z-index: 35; opacity: 0; pointer-events: none; transition: opacity var(--t); }
   body.sb-open .sb-scrim { opacity: 1; pointer-events: auto; }
-  .engine-screen { grid-column: 1; }
+  .engine-screen, .main { grid-column: 1; }
   .page { padding: 18px 16px 56px; }
   .page-titles h1 { font-size: 22px; }
   .search-box { max-width: none; }

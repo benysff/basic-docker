@@ -18,6 +18,7 @@ import docker_service as ds
 import resources as rs
 
 UserError = ds.UserError
+L = ds.L
 
 VOL_DIR = "Veri kutuları"
 DB_DIR = "Veritabanları"
@@ -35,7 +36,7 @@ def backup_root():
 def set_backup_root(path):
     path = os.path.realpath(os.path.expanduser((path or "").strip()))
     if not os.path.isdir(path):
-        raise UserError("Klasör bulunamadı.")
+        raise UserError(L("Klasör bulunamadı.", "Folder not found."))
     ds.update_settings(lambda s: s["arayuz"].update({"yedek_klasoru": path}))
     return path
 
@@ -63,9 +64,10 @@ def _helper_image(job):
             for r in refs:
                 if r.startswith(prefix):
                     return r
-    job.log(f"Yardımcı küçük kalıp indiriliyor ({HELPER_DEFAULT}, yaklaşık 3 MB, sadece bir kere)…")
+    job.log(L(f"Yardımcı küçük kalıp indiriliyor ({HELPER_DEFAULT}, yaklaşık 3 MB, sadece bir kere)…",
+              f"Pulling a small helper image ({HELPER_DEFAULT}, about 3 MB, only once)…"))
     if ds._stream(job, ["pull", HELPER_DEFAULT], timeout=600) != 0:
-        raise UserError("Yardımcı kalıp indirilemedi. İnternet bağlantını kontrol et.")
+        raise UserError(L("Yardımcı kalıp indirilemedi. İnternet bağlantını kontrol et.", "Could not pull the helper image. Check your internet connection."))
     return HELPER_DEFAULT
 
 
@@ -80,7 +82,7 @@ def _run_to_file(job, args, path, timeout=3600):
         except subprocess.TimeoutExpired:
             proc.kill()
             _, err = proc.communicate()
-            err = (err or b"") + b"\nZaman asimi."
+            err = (err or b"") + b"\ntimeout"
     for line in (err or b"").decode("utf-8", "replace").splitlines():
         if line.strip():
             job.log(line)
@@ -116,10 +118,10 @@ def _run_from_file(job, args, path, timeout=3600):
 
 def backup_volume(name):
     if not ds.NAME_RE.match(name or ""):
-        raise UserError("Geçersiz veri kutusu adı.")
+        raise UserError(L("Geçersiz veri kutusu adı.", "Invalid volume name."))
     code, _, _ = ds.docker("volume", "inspect", name, timeout=15)
     if code != 0:
-        raise UserError("Veri kutusu bulunamadı.")
+        raise UserError(L("Veri kutusu bulunamadı.", "Volume not found."))
     users = [v for v in rs.list_volumes() if v["name"] == name]
     running_db = users and users[0]["db"] and users[0]["running"]
 
@@ -127,54 +129,56 @@ def backup_volume(name):
         helper = _helper_image(job)
         path = os.path.join(backup_root(), VOL_DIR, f"{_safe(name)}__{_stamp()}.tar.gz")
         if running_db:
-            job.log("Not: Bu kutuyu kullanan veritabanı çalışıyor. En tutarlı yedek için 'Veritabanı dökümü' de al.")
-        job.log(f"{name} arşivleniyor…")
+            job.log(L("Not: Bu kutuyu kullanan veritabanı çalışıyor. En tutarlı yedek için 'Veritabanı dökümü' de al.",
+                      "Note: the database using this volume is running. For the most consistent backup, also take a 'Database dump'."))
+        job.log(L(f"{name} arşivleniyor…", f"Archiving {name}…"))
         code = _run_to_file(job, ["run", "--rm", "--label", HELPER_LABEL, "-v", f"{name}:/kutu:ro", "--entrypoint", "tar", helper,
                                   "czf", "-", "-C", "/kutu", "."], path)
         if code != 0:
-            raise UserError("Yedek alınamadı. Ayrıntılara bak.")
-        job.log(f"Kaydedildi: {path}")
-        return f"Yedek alındı ({rs.human_size(os.path.getsize(path))})."
+            raise UserError(L("Yedek alınamadı. Ayrıntılara bak.", "The backup failed. See the details."))
+        job.log(L(f"Kaydedildi: {path}", f"Saved: {path}"))
+        return L(f"Yedek alındı ({rs.human_size(os.path.getsize(path))}).", f"Backup saved ({rs.human_size(os.path.getsize(path))}).")
 
-    return ds.start_job(f"{name} yedekleniyor", f"_kutu:{name}", run)
+    return ds.start_job(L(f"{name} yedekleniyor", f"Backing up {name}"), f"_kutu:{name}", run)
 
 
 def restore_volume(path, target, create_new=False, wipe=False):
     path = os.path.realpath(os.path.expanduser(path or ""))
     if not os.path.isfile(path) or not path.endswith((".tar.gz", ".tgz", ".tar")):
-        raise UserError("Yedek dosyası bulunamadı (.tar.gz olmalı).")
+        raise UserError(L("Yedek dosyası bulunamadı (.tar.gz olmalı).", "Backup file not found (must be .tar.gz)."))
     target = (target or "").strip()
     if not ds.NAME_RE.match(target):
-        raise UserError("Hedef veri kutusunun adı geçersiz.")
+        raise UserError(L("Hedef veri kutusunun adı geçersiz.", "Invalid target volume name."))
     exists = ds.docker("volume", "inspect", target, timeout=15)[0] == 0
     if create_new and exists:
-        raise UserError(f"“{target}” adında bir veri kutusu zaten var. Başka bir ad seç.")
+        raise UserError(L(f"“{target}” adında bir veri kutusu zaten var. Başka bir ad seç.", f"A volume named “{target}” already exists. Pick another name."))
     if not create_new and not exists:
-        raise UserError("Hedef veri kutusu bulunamadı.")
+        raise UserError(L("Hedef veri kutusu bulunamadı.", "Target volume not found."))
     if exists:
         busy = [u["name"] for v in rs.list_volumes() if v["name"] == target for u in v["used_by"] if u["running"]]
         if busy:
-            raise UserError("Bu kutuyu kullanan parçalar çalışıyor: " + ", ".join(busy) + ". Önce onları durdur.")
+            raise UserError(L("Bu kutuyu kullanan parçalar çalışıyor: ", "Containers using this volume are running: ") + ", ".join(busy)
+                            + L(". Önce onları durdur.", ". Stop them first."))
 
     def run(job):
         helper = _helper_image(job)
         if create_new:
             code, _, err = ds.docker("volume", "create", target, timeout=30)
             if code != 0:
-                raise UserError("Veri kutusu oluşturulamadı: " + err.strip()[-200:])
-            job.log(f"Yeni veri kutusu oluşturuldu: {target}")
+                raise UserError(L("Veri kutusu oluşturulamadı: ", "Could not create the volume: ") + err.strip()[-200:])
+            job.log(L(f"Yeni veri kutusu oluşturuldu: {target}", f"New volume created: {target}"))
         script = ("find /kutu -mindepth 1 -delete && " if wipe else "") + "tar xzf - -C /kutu"
         if path.endswith(".tar"):
             script = script.replace("tar xzf", "tar xf")
-        job.log(f"{os.path.basename(path)} → {target} geri yükleniyor…")
+        job.log(L(f"{os.path.basename(path)} → {target} geri yükleniyor…", f"Restoring {os.path.basename(path)} → {target}…"))
         code = _run_from_file(job, ["run", "--rm", "--label", HELPER_LABEL, "-i", "-v", f"{target}:/kutu", "--entrypoint", "sh", helper,
                                     "-c", script], path)
         if code != 0:
-            raise UserError("Geri yükleme başarısız oldu. Ayrıntılara bak.")
+            raise UserError(L("Geri yükleme başarısız oldu. Ayrıntılara bak.", "The restore failed. See the details."))
         rs.invalidate_df()
-        return f"Geri yüklendi: {target}"
+        return L(f"Geri yüklendi: {target}", f"Restored: {target}")
 
-    return ds.start_job(f"{target} geri yükleniyor", f"_kutu:{target}", run)
+    return ds.start_job(L(f"{target} geri yükleniyor", f"Restoring {target}"), f"_kutu:{target}", run)
 
 
 # ---------------------------------------------------------------------------
@@ -227,14 +231,16 @@ def _dump_plan(engine, env):
             pw = env.get("MYSQL_PASSWORD") or env.get("MARIADB_PASSWORD", "")
             return ([f"-u{user}", "--databases", db, "--single-transaction", "--no-tablespaces", "--routines",
                      "--triggers"], {"MYSQL_PWD": pw}, "sql")
-        raise UserError("Veritabanı şifresi parçanın ayarlarında bulunamadı; döküm alınamıyor.")
+        raise UserError(L("Veritabanı şifresi parçanın ayarlarında bulunamadı; döküm alınamıyor.",
+                          "The database password isn't in the container settings, so a dump can't be taken."))
     if engine == "mongo":
         args = ["mongodump", "--archive", "--gzip"]
         user, pw = env.get("MONGO_INITDB_ROOT_USERNAME"), env.get("MONGO_INITDB_ROOT_PASSWORD")
         if user and pw:
             args += ["-u", user, "-p", pw, "--authenticationDatabase", "admin"]
         return args, {}, "archive.gz"
-    raise UserError("Bu parça için döküm desteklenmiyor (PostgreSQL, MySQL, MariaDB, MongoDB desteklenir).")
+    raise UserError(L("Bu parça için döküm desteklenmiyor (PostgreSQL, MySQL, MariaDB, MongoDB desteklenir).",
+                      "Dumps aren't supported for this container (PostgreSQL, MySQL, MariaDB and MongoDB are)."))
 
 
 def _exec_env_args(extra):
@@ -248,9 +254,9 @@ def dump_database(cid):
     _, c = ds.get_container(cid)
     engine = _db_engine(c["image"])
     if not engine:
-        raise UserError("Bu parça bir veritabanı gibi görünmüyor.")
+        raise UserError(L("Bu parça bir veritabanı gibi görünmüyor.", "This container doesn't look like a database."))
     if not c["running"]:
-        raise UserError("Döküm için veritabanının çalışıyor olması gerekir. Önce başlat.")
+        raise UserError(L("Döküm için veritabanının çalışıyor olması gerekir. Önce başlat.", "The database must be running to take a dump. Start it first."))
     env = _env_of(c["name"])
     args, extra, ext = _dump_plan(engine, env)
 
@@ -264,29 +270,30 @@ def dump_database(cid):
         if engine in ("mysql", "mariadb"):
             tools = [["mysqldump", *args], ["mariadb-dump", *args]]
         for i, tool in enumerate(tools):
-            job.log(f"{c['role_title']} dökümü alınıyor ({tool[0]})…")
+            job.log(L(f"{c['role_title']} dökümü alınıyor ({tool[0]})…", f"Dumping {c['role_title']} ({tool[0]})…"))
             code = _run_to_file(job, ["exec", *_exec_env_args(extra), c["name"], *tool], path)
             if code == 0:
-                job.log(f"Kaydedildi: {path}")
-                return f"Veritabanı dökümü alındı ({rs.human_size(os.path.getsize(path))})."
+                job.log(L(f"Kaydedildi: {path}", f"Saved: {path}"))
+                return L(f"Veritabanı dökümü alındı ({rs.human_size(os.path.getsize(path))}).",
+                         f"Database dump saved ({rs.human_size(os.path.getsize(path))}).")
             if code not in TOOL_MISSING or i + 1 >= len(tools):
                 break
-            job.log("Bu araç yok, diğeri deneniyor…")
-        raise UserError("Döküm alınamadı. Ayrıntılara bak.")
+            job.log(L("Bu araç yok, diğeri deneniyor…", "That tool isn't there; trying the other one…"))
+        raise UserError(L("Döküm alınamadı. Ayrıntılara bak.", "The dump failed. See the details."))
 
-    return ds.start_job(f"{c['name']} veritabanı dökümü", None, run)
+    return ds.start_job(L(f"{c['name']} veritabanı dökümü", f"{c['name']} database dump"), None, run)
 
 
 def restore_database(cid, path):
     path = os.path.realpath(os.path.expanduser(path or ""))
     if not os.path.isfile(path):
-        raise UserError("Döküm dosyası bulunamadı.")
+        raise UserError(L("Döküm dosyası bulunamadı.", "Dump file not found."))
     _, c = ds.get_container(cid)
     engine = _db_engine(c["image"])
     if not engine:
-        raise UserError("Bu parça bir veritabanı gibi görünmüyor.")
+        raise UserError(L("Bu parça bir veritabanı gibi görünmüyor.", "This container doesn't look like a database."))
     if not c["running"]:
-        raise UserError("Geri yükleme için veritabanının çalışıyor olması gerekir. Önce başlat.")
+        raise UserError(L("Geri yükleme için veritabanının çalışıyor olması gerekir. Önce başlat.", "The database must be running to restore. Start it first."))
     env = _env_of(c["name"])
     if engine == "postgres":
         user = env.get("POSTGRES_USER") or "postgres"
@@ -310,16 +317,16 @@ def restore_database(cid, path):
 
     def run(job):
         for i, tool in enumerate(tools):
-            job.log(f"{os.path.basename(path)} geri yükleniyor ({tool[0]})…")
+            job.log(L(f"{os.path.basename(path)} geri yükleniyor ({tool[0]})…", f"Restoring {os.path.basename(path)} ({tool[0]})…"))
             code = _run_from_file(job, ["exec", "-i", *_exec_env_args(extra), c["name"], *tool], path)
             if code == 0:
-                return "Veritabanı geri yüklendi."
+                return L("Veritabanı geri yüklendi.", "Database restored.")
             if code not in TOOL_MISSING or i + 1 >= len(tools):
                 break  # araç vardı ama hata verdi: dökümü ikinci kez çalıştırma
-            job.log("Bu araç yok, diğeri deneniyor…")
-        raise UserError("Geri yükleme hatalarla bitti. Ayrıntılara bak.")
+            job.log(L("Bu araç yok, diğeri deneniyor…", "That tool isn't there; trying the other one…"))
+        raise UserError(L("Geri yükleme hatalarla bitti. Ayrıntılara bak.", "The restore finished with errors. See the details."))
 
-    return ds.start_job(f"{c['name']} veritabanı geri yükleniyor", None, run)
+    return ds.start_job(L(f"{c['name']} veritabanı geri yükleniyor", f"Restoring {c['name']} database"), None, run)
 
 
 # ---------------------------------------------------------------------------
@@ -381,7 +388,7 @@ def list_backups():
 
 def delete_backup(path):
     if not path or not os.path.isfile(path) or not _inside_root(path):
-        raise UserError("Yedek dosyası bulunamadı.")
+        raise UserError(L("Yedek dosyası bulunamadı.", "Backup file not found."))
     if ds.IS_MAC:
         # Kalıcı silme yerine Çöp Sepeti'ne taşı (geri alınabilsin). macOS'un kendi işlevi;
         # Finder'ı kontrol etmek için izin istemez.
@@ -390,12 +397,12 @@ def delete_backup(path):
             ok, _, err = NSFileManager.defaultManager().trashItemAtURL_resultingItemURL_error_(
                 NSURL.fileURLWithPath_(path), None, None)
             if ok:
-                return "Çöp Sepeti'ne taşındı."
-            raise UserError("Çöp Sepeti'ne taşınamadı: " + str(err.localizedDescription() if err else ""))
+                return L("Çöp Sepeti'ne taşındı.", "Moved to the Trash.")
+            raise UserError(L("Çöp Sepeti'ne taşınamadı: ", "Could not move to the Trash: ") + str(err.localizedDescription() if err else ""))
         except ImportError:
             pass
     os.remove(path)
-    return "Silindi."
+    return L("Silindi.", "Deleted.")
 
 
 def reveal(path=None):

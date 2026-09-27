@@ -10,45 +10,53 @@ const Palette = {
   shown: [],
   idx: 0,
 
+  groups() {
+    return { pages: L("Sayfalar", "Pages"), actions: L("İşlemler", "Actions"), sets: L("Setler", "Sets"), cmds: L("Komutlar", "Commands") };
+  },
+
   build() {
     const out = [];
-    for (const n of NAV) out.push({ group: "Sayfalar", icon: n.icon, label: n.label(), hint: n.key ? `⌘${n.key}` : "", run: () => Router.go(n.path) });
+    const G = this.groups();
+    for (const n of NAV) out.push({ group: G.pages, icon: n.icon, label: n.label(), hint: n.key ? `⌘${n.key}` : "", run: () => Router.go(n.path) });
     for (const a of apps().filter((x) => x.source !== "system")) {
       out.push({ group: T("app", true), icon: "grid", label: a.name, sub: a.state_text, level: LEVEL_OF_APP[a.state], run: () => Router.go(`/uygulama/${encodeURIComponent(a.key)}`) });
       if (a.total || a.compose?.exists) {
         out.push(a.up > 0
-          ? { group: "İşlemler", icon: "stop", label: `${a.name}: durdur`, run: () => appAction(a.key, "durdur") }
-          : { group: "İşlemler", icon: "play", label: `${a.name}: başlat`, run: () => appAction(a.key, "baslat") });
+          ? { group: G.actions, icon: "stop", label: `${a.name}: ${L("durdur", "stop")}`, run: () => appAction(a.key, "durdur") }
+          : { group: G.actions, icon: "play", label: `${a.name}: ${L("başlat", "start")}`, run: () => appAction(a.key, "baslat") });
       }
     }
     for (const s of S.data?.sets || []) {
-      out.push({ group: "Setler", icon: "rocket", label: `${s.name} setini başlat`, run: () => runJob("/api/set/calistir", { id: s.id, islem: "baslat" }) });
-      out.push({ group: "Setler", icon: "stop", label: `${s.name} setini durdur`, run: () => runJob("/api/set/calistir", { id: s.id, islem: "durdur" }) });
+      out.push({ group: G.sets, icon: "rocket", label: L(`${s.name} setini başlat`, `Start the ${s.name} set`), run: () => runJob("/api/set/calistir", { id: s.id, islem: "baslat" }) });
+      out.push({ group: G.sets, icon: "stop", label: L(`${s.name} setini durdur`, `Stop the ${s.name} set`), run: () => runJob("/api/set/calistir", { id: s.id, islem: "durdur" }) });
     }
     for (const c of allContainers().filter((x) => x.app.source !== "system")) {
       out.push({ group: T("container", true), icon: c.kind, label: `${c.role_title}`, sub: `${c.app.source === "single" ? "" : c.app.name + " · "}${c.name}`, level: containerLevel(c), run: () => Router.go(`/parca/${encodeURIComponent(c.id)}`) });
-      out.push({ group: T("logs"), icon: "logs", label: `${c.name} kayıtları`, run: () => Router.go(`/parca/${encodeURIComponent(c.id)}/kayitlar`) });
+      out.push({ group: T("logs"), icon: "logs", label: L(`${c.name} kayıtları`, `${c.name} logs`), run: () => Router.go(`/parca/${encodeURIComponent(c.id)}/kayitlar`) });
     }
     const cmds = [
-      ["plus", "Yeni ekle", () => openNew(), "⌘N"],
-      ["db", "Hazır veritabanı kur", () => openNew("sablonlar")],
-      ["folder", "Proje klasöründen kur (docker-compose)", () => openNew("compose")],
-      ["download", `${T("image")} indir`, () => openPull()],
-      ["update", "Kalıp güncellemelerini denetle", () => runJob("/api/kalip/denetle-hepsi", {})],
-      ["sparkles", "Disk temizliği", () => Router.go("/temizlik")],
-      ["rocket", "Yeni çalışma seti", () => openSetEditor()],
-      ["archive", "Yedekleri aç", () => Router.go("/kutular/yedekler")],
-      ["moon", "Temayı değiştir (açık/koyu)", () => { S.prefs.tema = document.documentElement.dataset.theme === "dark" ? "acik" : "koyu"; applyTheme(); api("/api/ayarlar/kaydet", { tema: S.prefs.tema }).catch(() => {}); }],
-      ["sliders", S.prefs.dil === "teknik" ? "Sade Türkçeye geç" : "Teknik terimlere geç", () => { S.prefs.dil = S.prefs.dil === "teknik" ? "sade" : "teknik"; api("/api/ayarlar/kaydet", { dil: S.prefs.dil }).catch(() => {}); renderSidebar(); Router.current?.view.unmount?.(); Router.current = null; Router.render(); }],
-      ["help", "Sözlük: bu ne demek?", () => openHelp()],
-    ];
-    for (const [ic, label, run, hint] of cmds) out.push({ group: "Komutlar", icon: ic, label, run, hint });
+      ["plus", L("Yeni ekle", "Add new"), () => openNew(), "⌘N"],
+      ["db", L("Hazır veritabanı kur", "Set up a ready-made database"), () => openNew("sablonlar")],
+      ["folder", L("Proje klasöründen kur (docker-compose)", "Set up from a project folder (docker-compose)"), () => openNew("compose")],
+      ["download", L(`${T("image")} indir`, "Pull an image"), () => openPull()],
+      ["update", L("Kalıp güncellemelerini denetle", "Check for image updates"), () => runJob("/api/kalip/denetle-hepsi", {})],
+      ["sparkles", L("Disk temizliği", "Disk cleanup"), () => Router.go("/temizlik")],
+      ["rocket", L("Yeni çalışma seti", "New work set"), () => openSetEditor()],
+      ["archive", L("Yedekleri aç", "Open backups"), () => Router.go("/kutular/yedekler")],
+      ["server", L("Uzak Docker ekle (SSH)", "Add remote Docker (SSH)"), () => openAddRemote(() => Router.go("/sistem"))],
+      S.data?.platform?.remote && ["server", L("Bu Mac'teki Docker'a dön", "Switch to the Docker on this Mac"), () => useLocalDocker()],
+      ["globe", L("Switch to English", "Türkçeye geç"), () => setLanguage(isEN() ? "tr" : "en")],
+      ["moon", L("Temayı değiştir (açık/koyu)", "Toggle theme (light/dark)"), () => { S.prefs.tema = document.documentElement.dataset.theme === "dark" ? "acik" : "koyu"; applyTheme(); api("/api/ayarlar/kaydet", { tema: S.prefs.tema }).catch(() => {}); }],
+      !isEN() && ["sliders", S.prefs.dil === "teknik" ? "Sade Türkçeye geç" : "Teknik terimlere geç", () => { S.prefs.dil = S.prefs.dil === "teknik" ? "sade" : "teknik"; api("/api/ayarlar/kaydet", { dil: S.prefs.dil }).catch(() => {}); renderSidebar(); Router.current?.view.unmount?.(); Router.current = null; Router.render(); }],
+      ["help", L("Sözlük: bu ne demek?", "Glossary: what does this mean?"), () => openHelp()],
+    ].filter(Boolean);
+    for (const [ic, label, run, hint] of cmds) out.push({ group: G.cmds, icon: ic, label, run, hint });
     return out;
   },
 
   score(item, qq) {
     if (!qq) return 1;
-    const hay = (item.label + " " + (item.sub || "") + " " + item.group).toLocaleLowerCase("tr");
+    const hay = (item.label + " " + (item.sub || "") + " " + item.group).toLocaleLowerCase(loc());
     if (hay.startsWith(qq)) return 100;
     const i = hay.indexOf(qq);
     if (i >= 0) return 80 - Math.min(i, 40);
@@ -68,12 +76,12 @@ const Palette = {
     this.items = this.build();
     const d = document.createElement("dialog");
     d.className = "palette";
-    d.setAttribute("aria-label", "Komut paleti");
+    d.setAttribute("aria-label", L("Komut paleti", "Command palette"));
     d.innerHTML = String(html`
       <div class="palette-card">
-        <div class="palette-search">${icon("search")}<input id="pal-in" placeholder="Ne yapmak istiyorsun? (ör. blog başlat, kayıtlar, temizlik)" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true" aria-controls="pal-list"><kbd>esc</kbd></div>
+        <div class="palette-search">${icon("search")}<input id="pal-in" placeholder="${L("Ne yapmak istiyorsun? (ör. blog başlat, kayıtlar, temizlik)", "What do you want to do? (e.g. start blog, logs, cleanup)")}" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true" aria-controls="pal-list"><kbd>esc</kbd></div>
         <div class="palette-list" id="pal-list" role="listbox"></div>
-        <div class="palette-foot"><span>${kbd("↑")}${kbd("↓")} seç</span><span>${kbd("↵")} uygula</span><span>${kbd("esc")} kapat</span></div>
+        <div class="palette-foot"><span>${kbd("↑")}${kbd("↓")} ${L("seç", "select")}</span><span>${kbd("↵")} ${L("uygula", "run")}</span><span>${kbd("esc")} ${L("kapat", "close")}</span></div>
       </div>`);
     document.body.appendChild(d);
     this.el = d;
@@ -112,10 +120,11 @@ const Palette = {
   },
 
   render(query, keepScroll = false) {
-    const qq = query.trim().toLocaleLowerCase("tr");
+    const qq = query.trim().toLocaleLowerCase(loc());
+    const G = this.groups();
     let list = this.items.map((it) => ({ it, s: this.score(it, qq) })).filter((x) => x.s > 0);
     if (qq) list.sort((a, b) => b.s - a.s);
-    else list = list.filter((x) => ["Sayfalar", "Komutlar", T("app", true), "Setler"].includes(x.it.group));
+    else list = list.filter((x) => [G.pages, G.cmds, T("app", true), G.sets].includes(x.it.group));
     // Aynı gruptakiler bir arada dursun; gruplar en iyi eşleşmelerine göre sıralansın.
     const order = [];
     const byGroup = new Map();
@@ -134,7 +143,7 @@ const Palette = {
         <span class="pal-label">${it.label}${it.sub ? html`<small>${it.sub}</small>` : ""}</span>
         ${it.level ? dot(it.level) : ""}${it.hint ? html`<kbd>${it.hint}</kbd>` : ""}
       </div>`;
-    }) : html`<div class="pal-empty">“${query}” için sonuç yok.</div>`}`);
+    }) : html`<div class="pal-empty">${L(`“${query}” için sonuç yok.`, `No results for “${query}”.`)}</div>`}`);
     $("#pal-in", this.el).setAttribute("aria-activedescendant", `pi-${this.idx}`);
     const act = $(".pal-item.active", box);
     if (act) act.scrollIntoView({ block: "nearest" });

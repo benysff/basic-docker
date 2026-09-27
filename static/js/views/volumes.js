@@ -18,14 +18,15 @@ const VolumesView = {
       <div class="page">
         ${pageHead({
           title: T("volume", true),
-          desc: "Parçaların verilerini sakladığı kutular. Parça silinse bile kutu durur. Buradan tek tıkla yedek alıp geri yükleyebilirsin.",
+          desc: L("Parçaların verilerini sakladığı kutular. Parça silinse bile kutu durur. Buradan tek tıkla yedek alıp geri yükleyebilirsin.",
+            "Where containers keep their data. A volume stays even if its container is deleted. Back it up and restore it with one click here."),
           actions: html`
-            <button class="btn" data-restore-file>${icon("upload")}Dosyadan geri yükle</button>
-            <button class="btn primary" data-create>${icon("plus")}${T("volume")} oluştur</button>`,
+            <button class="btn" data-restore-file>${icon("upload")}${L("Dosyadan geri yükle", "Restore from file")}</button>
+            <button class="btn primary" data-create>${icon("plus")}${L(`${T("volume")} oluştur`, "Create volume")}</button>`,
         })}
         <div id="vl-tabs"></div>
         <div class="toolbar" id="vl-toolbar">
-          ${searchBox("vl-search", `${T("volume")} ara…`, this.query)}
+          ${searchBox("vl-search", L(`${T("volume")} ara…`, "Search volumes…"), this.query)}
           <div id="vl-seg"></div>
         </div>
         <div id="vl-body">${skeletonRows(8)}</div>
@@ -101,27 +102,28 @@ const VolumesView = {
   volMenu(v) {
     const dbUser = v.used_by.find((u) => u.kind === "db" && u.running);
     return [
-      { label: "Yedek al (.tar.gz)", icon: "archive", onClick: () => runJob("/api/kutu/yedekle", { ad: v.name }, () => this.loadBackups()) },
-      dbUser && { label: "Veritabanı dökümü al (daha güvenli)", icon: "backup", onClick: () => runJob("/api/db/dokum", { id: dbUser.id }, () => this.loadBackups()) },
-      { label: "Bir yedeği bu kutuya geri yükle…", icon: "upload", onClick: () => this.pickBackupFor(v) },
-      { label: "Adını kopyala", icon: "copy", onClick: () => copyText(v.name) },
+      { label: L("Yedek al (.tar.gz)", "Back up (.tar.gz)"), icon: "archive", onClick: () => runJob("/api/kutu/yedekle", { ad: v.name }, () => this.loadBackups()) },
+      dbUser && { label: L("Veritabanı dökümü al (daha güvenli)", "Take a database dump (safer)"), icon: "backup", onClick: () => runJob("/api/db/dokum", { id: dbUser.id }, () => this.loadBackups()) },
+      { label: L("Bir yedeği bu kutuya geri yükle…", "Restore a backup into this volume…"), icon: "upload", onClick: () => this.pickBackupFor(v) },
+      { label: L("Adını kopyala", "Copy name"), icon: "copy", onClick: () => copyText(v.name) },
       "-",
-      { label: v.in_use ? "Sil (önce kullanan parçaları sil)" : "Sil…", icon: "trash", danger: true, disabled: v.in_use, onClick: () => this.remove(v) },
+      { label: v.in_use ? L("Sil (önce kullanan parçaları sil)", "Delete (delete the containers using it first)") : L("Sil…", "Delete…"), icon: "trash", danger: true, disabled: v.in_use, onClick: () => this.remove(v) },
     ];
   },
 
   pickBackupFor(v) {
     const own = (this.backups?.backups || []).filter((b) => b.kind === "volume" && b.source === v.name);
     if (!own.length) {
-      return flash(`${v.name} için henüz yedek yok. Başka bir kutunun yedeğini yüklemek için Yedekler sekmesini kullan.`, true);
+      return flash(L(`${v.name} için henüz yedek yok. Başka bir kutunun yedeğini yüklemek için Yedekler sekmesini kullan.`,
+        `There is no backup of ${v.name} yet. To load another volume's backup, use the Backups tab.`), true);
     }
     if (own.length === 1) return openRestoreVolume(own[0], this.vols, v.name);
     Modal.open({
-      title: "Hangi yedek geri yüklensin?", sub: v.name, size: "sm",
+      title: L("Hangi yedek geri yüklensin?", "Which backup should be restored?"), sub: v.name, size: "sm",
       body: html`<div class="pick-list">${own.map((b, i) => html`
         <label class="radio-card"><input type="radio" name="pb" value="${i}" ${i === 0 ? raw("checked") : ""}>
           <span><b>${fmt.date(b.mtime)}</b><small>${fmt.ago(b.mtime)} · ${fmt.bytes(b.size)}</small></span></label>`)}</div>`,
-      foot: html`<button class="btn" data-close>Vazgeç</button><button class="btn primary" id="pb-go">Devam</button>`,
+      foot: html`<button class="btn" data-close>${L("Vazgeç", "Cancel")}</button><button class="btn primary" id="pb-go">${L("Devam", "Continue")}</button>`,
       onMount: (m) => {
         $("#pb-go", m).addEventListener("click", () => openRestoreVolume(own[+$("input[name=pb]:checked", m).value], this.vols, v.name));
       },
@@ -130,19 +132,21 @@ const VolumesView = {
 
   async create() {
     const name = await promptDialog({
-      title: `Yeni ${Tl("volume")}`, label: "Ad", placeholder: "proje-veri",
-      help: "Harf, rakam, - ve _ kullanabilirsin. Oluşturduktan sonra bir parçaya bağlayabilirsin.",
-      confirmText: "Oluştur", validate: (v) => (/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(v) ? "" : "Geçerli bir ad yaz (ör. proje-veri)."),
+      title: L(`Yeni ${Tl("volume")}`, "New volume"), label: L("Ad", "Name"), placeholder: L("proje-veri", "project-data"),
+      help: L("Harf, rakam, - ve _ kullanabilirsin. Oluşturduktan sonra bir parçaya bağlayabilirsin.", "Use letters, digits, - and _. You can attach it to a container afterwards."),
+      confirmText: L("Oluştur", "Create"), validate: (v) => (/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(v) ? "" : L("Geçerli bir ad yaz (ör. proje-veri).", "Enter a valid name (e.g. project-data).")),
     });
     if (!name) return;
-    try { await api("/api/kutu/olustur", { ad: name }); flash(`${name} oluşturuldu`); this.load(); } catch (e) { flash(e.message, true); }
+    try { await api("/api/kutu/olustur", { ad: name }); flash(L(`${name} oluşturuldu`, `${name} created`)); this.load(); } catch (e) { flash(e.message, true); }
   },
 
   async remove(v) {
     const r = await confirmDialog({
-      title: `${v.anonymous ? "İsimsiz kutu" : v.name} silinsin mi?`, danger: true, confirmText: "Kalıcı olarak sil", icon: "trash",
-      text: `İçindeki bütün veriler${v.size ? ` (${fmt.bytes(v.size)})` : ""} kalıcı olarak silinir. Geri alınamaz.`,
-      extra: callout({ level: "tip", text: "Emin değilsen önce “Yedek al” ile .tar.gz yedeğini alabilirsin." }),
+      title: L(`${v.anonymous ? "İsimsiz kutu" : v.name} silinsin mi?`, `Delete ${v.anonymous ? "anonymous volume" : v.name}?`), danger: true,
+      confirmText: L("Kalıcı olarak sil", "Delete permanently"), icon: "trash",
+      text: L(`İçindeki bütün veriler${v.size ? ` (${fmt.bytes(v.size)})` : ""} kalıcı olarak silinir. Geri alınamaz.`,
+        `All data in it${v.size ? ` (${fmt.bytes(v.size)})` : ""} is deleted permanently. This cannot be undone.`),
+      extra: callout({ level: "tip", text: L("Emin değilsen önce “Yedek al” ile .tar.gz yedeğini alabilirsin.", "If you are not sure, take a .tar.gz backup first with “Back up”.") }),
     });
     if (!r) return;
     runJob("/api/kutu/sil", { adlar: [v.name] }, () => this.load());
@@ -150,8 +154,9 @@ const VolumesView = {
 
   async removeBackup(b) {
     const r = await confirmDialog({
-      title: "Yedek silinsin mi?", danger: true, confirmText: "Çöp Sepeti'ne taşı", icon: "trash",
-      text: `${b.file} Çöp Sepeti'ne taşınacak. Çöp Sepeti'ni boşaltana kadar geri alabilirsin.`,
+      title: L("Yedek silinsin mi?", "Delete this backup?"), danger: true, confirmText: L("Çöp Sepeti'ne taşı", "Move to Trash"), icon: "trash",
+      text: L(`${b.file} Çöp Sepeti'ne taşınacak. Çöp Sepeti'ni boşaltana kadar geri alabilirsin.`,
+        `${b.file} will be moved to the Trash. You can get it back until you empty the Trash.`),
     });
     if (!r) return;
     try { flash((await api("/api/yedek/sil", { dosya: b.path })).mesaj); this.loadBackups(); } catch (e) { flash(e.message, true); }
@@ -172,7 +177,7 @@ const VolumesView = {
     const nb = this.backups?.backups?.length;
     patch($("#vl-tabs", this.root), tabs([
       { id: "kutular", label: T("volume", true), icon: "drive", count: this.vols?.length },
-      { id: "yedekler", label: "Yedekler", icon: "archive", count: nb },
+      { id: "yedekler", label: L("Yedekler", "Backups"), icon: "archive", count: nb },
     ], this.tab));
     this.renderBody();
   },
@@ -187,38 +192,39 @@ const VolumesView = {
 
     const vols = this.vols;
     patch($("#vl-seg", this.root), segmented("vl", [
-      { id: "hepsi", label: "Tümü", count: vols.length },
-      { id: "kullanilan", label: "Kullanılan", count: vols.filter((v) => v.in_use).length },
-      { id: "sahipsiz", label: "Sahipsiz", count: vols.filter((v) => !v.in_use).length },
+      { id: "hepsi", label: L("Tümü", "All"), count: vols.length },
+      { id: "kullanilan", label: L("Kullanılan", "In use"), count: vols.filter((v) => v.in_use).length },
+      { id: "sahipsiz", label: L("Sahipsiz", "Orphaned"), count: vols.filter((v) => !v.in_use).length },
     ], this.filter));
 
-    const qq = this.query.trim().toLocaleLowerCase("tr");
+    const qq = this.query.trim().toLocaleLowerCase(loc());
     let list = vols;
-    if (qq) list = list.filter((v) => [v.name, v.app_name, ...v.used_by.map((u) => u.name)].join(" ").toLocaleLowerCase("tr").includes(qq));
+    if (qq) list = list.filter((v) => [v.name, v.app_name, ...v.used_by.map((u) => u.name)].join(" ").toLocaleLowerCase(loc()).includes(qq));
     if (this.filter === "kullanilan") list = list.filter((v) => v.in_use);
     if (this.filter === "sahipsiz") list = list.filter((v) => !v.in_use);
-    if (!list.length) return patch(body, emptyState({ icon: "drive", title: "Eşleşen veri kutusu yok", compact: true }));
+    if (!list.length) return patch(body, emptyState({ icon: "drive", title: L("Eşleşen veri kutusu yok", "No matching volumes"), compact: true }));
     const orphanSize = vols.filter((v) => !v.in_use).reduce((n, v) => n + (v.size || 0), 0);
 
     patch(body, html`
-      ${this.filter === "sahipsiz" && orphanSize ? callout({ level: "tip", title: "Sahipsiz kutular",
-        text: `Hiçbir parçanın kullanmadığı kutular (${fmt.bytes(orphanSize)}). Çoğu eski projelerden kalmadır ama içinde veri olabilir; silmeden önce yedek almak iyi fikir.` }) : ""}
+      ${this.filter === "sahipsiz" && orphanSize ? callout({ level: "tip", title: L("Sahipsiz kutular", "Orphaned volumes"),
+        text: L(`Hiçbir parçanın kullanmadığı kutular (${fmt.bytes(orphanSize)}). Çoğu eski projelerden kalmadır ama içinde veri olabilir; silmeden önce yedek almak iyi fikir.`,
+          `Volumes no container uses (${fmt.bytes(orphanSize)}). Most are left over from old projects but may still hold data; backing up before deleting is a good idea.`) }) : ""}
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>${T("volume")}</th><th class="col-md">${T("app")}</th><th>Kullanan</th><th class="num">Boyut</th><th class="col-lg">Oluşturulma</th><th class="actions-col"><span class="sr">İşlemler</span></th></tr></thead>
+          <thead><tr><th>${T("volume")}</th><th class="col-md">${T("app")}</th><th>${L("Kullanan", "Used by")}</th><th class="num">${L("Boyut", "Size")}</th><th class="col-lg">${L("Oluşturulma", "Created")}</th><th class="actions-col"><span class="sr">${L("İşlemler", "Actions")}</span></th></tr></thead>
           <tbody>${list.map((v) => html`
             <tr>
               <td><div class="cell-main"><div class="kind-tile sm ${v.running ? "lvl-ok" : ""}">${icon(v.db ? "db" : "drive")}</div>
                 <div class="min0">${v.anonymous
-                  ? html`<div class="strong">İsimsiz kutu ${hintIcon("Bir kalıp kendi içinde 'kalıcı klasör' istediğinde Docker bunu otomatik oluşturur. Adı rastgele bir koddur.")}</div><div class="mono small muted ellipsis" title="${v.name}">${v.name.slice(0, 16)}…</div>`
+                  ? html`<div class="strong">${L("İsimsiz kutu", "Anonymous volume")} ${hintIcon(L("Bir kalıp kendi içinde 'kalıcı klasör' istediğinde Docker bunu otomatik oluşturur. Adı rastgele bir koddur.", "Docker creates these automatically when an image asks for a persistent folder. The name is a random code."))}</div><div class="mono small muted ellipsis" title="${v.name}">${v.name.slice(0, 16)}…</div>`
                   : html`<div class="strong mono ellipsis" title="${v.name}">${v.name}</div>`}</div></div></td>
               <td class="col-md">${v.app_name ? (findApp(v.app) ? html`<a href="${link(`/uygulama/${v.app}`)}">${v.app_name}</a>` : html`<span class="muted">${v.app_name}</span>`) : html`<span class="muted">—</span>`}</td>
-              <td>${v.used_by.length ? html`<div class="chips">${v.used_by.slice(0, 2).map((u) => html`<a class="chip" href="${link(`/parca/${u.id}`)}" title="İçeride ${u.dest}">${dot(u.running ? "ok" : "off")}${shortRole(u.role)}</a>`)}</div>` : html`<span class="pill">Sahipsiz</span>`}</td>
+              <td>${v.used_by.length ? html`<div class="chips">${v.used_by.slice(0, 2).map((u) => html`<a class="chip" href="${link(`/parca/${u.id}`)}" title="${L("İçeride", "Inside")} ${u.dest}">${dot(u.running ? "ok" : "off")}${shortRole(u.role)}</a>`)}</div>` : html`<span class="pill">${L("Sahipsiz", "Orphaned")}</span>`}</td>
               <td class="num mono small">${v.size === null ? "—" : fmt.bytes(v.size)}</td>
               <td class="col-lg small muted">${fmt.ago(v.created)}</td>
               <td class="actions-col"><div class="row-actions">
-                <button class="btn sm" data-vol="backup" data-name="${v.name}" title="İçeriği .tar.gz olarak Mac'ine kaydet">${icon("archive")}Yedekle</button>
-                <button class="icon-btn sm" data-vol="menu" data-name="${v.name}" aria-label="Diğer işlemler" aria-haspopup="menu">${icon("more")}</button>
+                <button class="btn sm" data-vol="backup" data-name="${v.name}" title="${L("İçeriği .tar.gz olarak Mac'ine kaydet", "Save its contents to your Mac as .tar.gz")}">${icon("archive")}${L("Yedekle", "Back up")}</button>
+                <button class="icon-btn sm" data-vol="menu" data-name="${v.name}" aria-label="${L("Diğer işlemler", "More actions")}" aria-haspopup="menu">${icon("more")}</button>
               </div></td>
             </tr>`)}</tbody>
         </table>
@@ -233,36 +239,39 @@ const VolumesView = {
       <div class="backup-root panel">
         <div class="backup-root-info">
           ${icon("folder")}
-          <div class="min0"><div class="muted small">Yedeklerin durduğu klasör</div><div class="mono ellipsis" title="${b.root}">${b.root}</div></div>
+          <div class="min0"><div class="muted small">${L("Yedeklerin durduğu klasör", "Backups folder")}</div><div class="mono ellipsis" title="${b.root}">${b.root}</div></div>
         </div>
         <div class="row-actions">
-          <button class="btn sm" data-open-root>${icon("folder")}Finder'da aç</button>
-          <button class="btn sm" data-change-root>Değiştir…</button>
+          <button class="btn sm" data-open-root>${icon("folder")}${L("Finder'da aç", "Open in Finder")}</button>
+          <button class="btn sm" data-change-root>${L("Değiştir…", "Change…")}</button>
         </div>
       </div>
       ${list.length ? html`
         <div class="table-wrap">
           <table class="table">
-            <thead><tr><th>Yedek</th><th>Türü</th><th class="col-md">Tarih</th><th class="num">Boyut</th><th class="actions-col"><span class="sr">İşlemler</span></th></tr></thead>
+            <thead><tr><th>${L("Yedek", "Backup")}</th><th>${L("Türü", "Type")}</th><th class="col-md">${L("Tarih", "Date")}</th><th class="num">${L("Boyut", "Size")}</th><th class="actions-col"><span class="sr">${L("İşlemler", "Actions")}</span></th></tr></thead>
             <tbody>${list.map((x) => html`
               <tr>
                 <td><div class="cell-main"><div class="kind-tile sm">${icon(x.kind === "db" ? "db" : "archive")}</div>
                   <div class="min0"><div class="strong mono ellipsis">${x.source}</div><div class="small muted mono ellipsis" title="${x.file}">${x.file}</div></div></div></td>
-                <td>${x.kind === "db" ? pill("Veritabanı dökümü", "accent") : pill(`${T("volume")} yedeği`)}</td>
+                <td>${x.kind === "db" ? pill(L("Veritabanı dökümü", "Database dump"), "accent") : pill(L(`${T("volume")} yedeği`, "Volume backup"))}</td>
                 <td class="col-md small">${fmt.date(x.mtime)} <span class="muted">· ${fmt.ago(x.mtime)}</span></td>
                 <td class="num mono small">${fmt.bytes(x.size)}</td>
                 <td class="actions-col"><div class="row-actions">
-                  <button class="btn sm" data-bk="restore" data-path="${x.path}">${icon("upload")}Geri yükle</button>
-                  <button class="icon-btn sm" data-bk="reveal" data-path="${x.path}" aria-label="Finder'da göster" title="Finder'da göster">${icon("folder")}</button>
-                  <button class="icon-btn sm" data-bk="delete" data-path="${x.path}" aria-label="Çöp Sepeti'ne taşı" title="Çöp Sepeti'ne taşı">${icon("trash")}</button>
+                  <button class="btn sm" data-bk="restore" data-path="${x.path}">${icon("upload")}${L("Geri yükle", "Restore")}</button>
+                  <button class="icon-btn sm" data-bk="reveal" data-path="${x.path}" aria-label="${L("Finder'da göster", "Show in Finder")}" title="${L("Finder'da göster", "Show in Finder")}">${icon("folder")}</button>
+                  <button class="icon-btn sm" data-bk="delete" data-path="${x.path}" aria-label="${L("Çöp Sepeti'ne taşı", "Move to Trash")}" title="${L("Çöp Sepeti'ne taşı", "Move to Trash")}">${icon("trash")}</button>
                 </div></td>
               </tr>`)}</tbody>
           </table>
         </div>` : emptyState({
-          icon: "archive", title: "Henüz yedek yok",
-          text: `${T("volume", true)} sekmesinde “Yedekle”ye bas ya da bir veritabanı parçasında “Veritabanı dökümü al”ı seç. Yedekler Mac'inde, yukarıdaki klasörde durur.`,
+          icon: "archive", title: L("Henüz yedek yok", "No backups yet"),
+          text: L(`${T("volume", true)} sekmesinde “Yedekle”ye bas ya da bir veritabanı parçasında “Veritabanı dökümü al”ı seç. Yedekler Mac'inde, yukarıdaki klasörde durur.`,
+            "Press “Back up” on the Volumes tab, or choose “Take a database dump” on a database container. Backups are kept on your Mac, in the folder above."),
         })}
-      ${callout({ level: "tip", title: "Hangi yedek ne zaman?", text: raw(`<b>${esc(T("volume"))} yedeği</b> kutunun içindeki bütün dosyaları olduğu gibi arşivler; her tür parça için çalışır. <b>Veritabanı dökümü</b> ise veritabanının kendi aracıyla alınır; çalışırken bile tutarlıdır ve farklı bir sürüme taşımak için tek güvenli yoldur.`) })}`;
+      ${callout({ level: "tip", title: L("Hangi yedek ne zaman?", "Which backup when?"), text: isEN()
+        ? raw("A <b>volume backup</b> archives every file in the volume as is; it works for any container. A <b>database dump</b> is taken with the database's own tool; it is consistent even while running and is the only safe way to move to another version.")
+        : raw(`<b>${esc(T("volume"))} yedeği</b> kutunun içindeki bütün dosyaları olduğu gibi arşivler; her tür parça için çalışır. <b>Veritabanı dökümü</b> ise veritabanının kendi aracıyla alınır; çalışırken bile tutarlıdır ve farklı bir sürüme taşımak için tek güvenli yoldur.`) })}`;
   },
 };
 
@@ -271,7 +280,7 @@ async function chooseBackupRoot(after) {
     const r = await api("/api/klasor-sec", {});
     if (!r.yol) return;
     await api("/api/yedek-klasoru", { yol: r.yol });
-    flash("Yedek klasörü değişti");
+    flash(L("Yedek klasörü değişti", "Backups folder changed"));
     after?.();
   } catch (e) { flash(e.message, true); }
 }

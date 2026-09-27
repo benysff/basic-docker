@@ -27,6 +27,7 @@ import catalog
 import docker_service as ds
 import insights
 import monitor
+import remote as rm
 import resources as rs
 import terminal as term
 
@@ -62,6 +63,7 @@ UI_PREFS = {
     "bildirim": bool,
     "gorunum": ("kart", "liste"),
     "kenar_dar": bool,
+    "lang": ("tr", "en"),
 }
 
 
@@ -89,8 +91,10 @@ def api_state(p):
     snap.pop("taken_ports", None)
     snap["jobs"] = ds.recent_jobs()
     kind = _engine()
-    snap["platform"] = {"mac": ds.IS_MAC, "engine": kind, "engine_name": ds.ENGINE_NAMES.get(kind, "Docker"),
-                        "version": VERSION}
+    remote = rm.remote_info() if kind == "remote" else None
+    snap["platform"] = {"mac": ds.IS_MAC, "engine": kind,
+                        "engine_name": (remote["context"] or remote["host"]) if remote else ds.ENGINE_NAMES.get(kind, "Docker"),
+                        "remote": remote, "version": VERSION}
     snap["ui"] = ds.load_settings()["arayuz"]
     snap["sets"] = ds.list_sets()
     return snap
@@ -128,7 +132,7 @@ def api_create(p):
     elif kind == "compose":
         job = ds.create_from_compose(_s(p, "yol"), _s(p, "proje"), _s(p, "ad"))
     else:
-        raise ds.UserError("Bilinmeyen oluşturma türü.")
+        raise ds.UserError(ds.L("Bilinmeyen oluşturma türü.", "Unknown create type."))
     return _job(job)
 
 
@@ -142,9 +146,12 @@ def api_diagnose(p):
         host = rs.host_arch()
         if code == 0 and arch and host and arch != host:
             arch_warning = {
-                "id": "emulated", "title": f"Kalıp {arch} işlemci için; Mac'in {host}",
-                "desc": "Parça emülasyonla (Rosetta/QEMU) çalışıyor. Çalışabilir ama yavaştır; bazı programlar hiç açılmaz.",
-                "fix": f"Kalıbın {host} sürümü varsa onu kullan.", "link": None, "line": "", "line_no": 0,
+                "id": "emulated",
+                "title": ds.L(f"Kalıp {arch} işlemci için; Mac'in {host}", f"The image is for {arch}; your Mac is {host}"),
+                "desc": ds.L("Parça emülasyonla (Rosetta/QEMU) çalışıyor. Çalışabilir ama yavaştır; bazı programlar hiç açılmaz.",
+                             "The container runs under emulation (Rosetta/QEMU). It may work but is slow; some programs won't start."),
+                "fix": ds.L(f"Kalıbın {host} sürümü varsa onu kullan.", f"Use the {host} version of the image if there is one."),
+                "link": None, "line": "", "line_no": 0,
             }
     return {"teshis": insights.diagnose(c, text, arch_warning)}
 
@@ -173,6 +180,8 @@ def api_prefs_set(p):
         elif isinstance(rule, tuple) and v in rule:
             clean[k] = v
     ds.update_settings(lambda s: s["arayuz"].update(clean))
+    if "lang" in clean:
+        ds.set_lang(clean["lang"])
     return {"tamam": True}
 
 
@@ -198,9 +207,38 @@ def api_choose_file(p):
 def api_open_link(p):
     url = _s(p, "url")
     if urlparse(url).scheme not in ("http", "https"):
-        raise ds.UserError("Geçersiz bağlantı.")
+        raise ds.UserError(ds.L("Geçersiz bağlantı.", "Invalid link."))
+    url, tunnel = rm.open_url(url)  # uzak motorda localhost adresleri için önce SSH tüneli
     webbrowser.open(url)
-    return {"tamam": True}
+    return {"tamam": True, "url": url, "tunel": tunnel}
+
+
+def _context_changed():
+    """Bağlam değişince: önbellekler, canlı akışlar ve eski sunucuya açılmış tüneller sıfırlanır."""
+    _engine_cache["t"] = 0.0
+    rm.invalidate()
+    rm.close_all()
+    monitor.reconnect()
+
+
+def api_use_context(p):
+    name = rs.use_context(_s(p, "ad"))
+    _context_changed()
+    return {"ad": name}
+
+
+def api_use_local(p):
+    name = rs.use_context(rm.local_context())
+    _context_changed()
+    return {"ad": name}
+
+
+def api_add_remote(p):
+    res = rm.add_remote(p)
+    if p.get("gec"):
+        rs.use_context(res["name"])
+        _context_changed()
+    return {"sonuc": res}
 
 
 def api_copy(p):
@@ -227,7 +265,14 @@ ROUTES = {
     "/api/is": lambda p: {"is": ds.get_job(_s(p, "id"))},
     "/api/etkinlik": lambda p: {"olaylar": monitor.events(days=int(p.get("gun") or 7))},
     "/api/sistem": lambda p: {"sistem": rs.system_info()},
-    "/api/baglam": lambda p: {"ad": rs.use_context(_s(p, "ad"))},
+    "/api/baglam": api_use_context,
+    "/api/baglamlar": lambda p: {"baglamlar": rm.list_contexts(), "tuneller": rm.list_tunnels(), "uzak": rm.remote_info()},
+    "/api/baglam/yerel": api_use_local,
+    "/api/baglam/dene": lambda p: {"sonuc": rm.test_context(_s(p, "ad"))},
+    "/api/baglam/sil": lambda p: {"ad": rm.remove_context(_s(p, "ad"))},
+    "/api/uzak/ekle": api_add_remote,
+    "/api/tunel/ac": lambda p: {"tunel": rm.open_tunnel(p.get("kapi"))},
+    "/api/tunel/kapat": lambda p: {"tamam": rm.close_tunnel(p.get("kapi"))},
     "/api/docker-ac": lambda p: {"mesaj": ds.start_docker_desktop()},
     # Uygulamalar
     "/api/katalog": lambda p: {"katalog": catalog.public_catalog()},
@@ -310,14 +355,14 @@ class Bridge:
             params.update(body)
         route = ROUTES.get(parsed.path)
         if not route:
-            return {"ok": False, "hata": "Bilinmeyen işlem."}
+            return {"ok": False, "hata": ds.L("Bilinmeyen işlem.", "Unknown action.")}
         try:
             return {"ok": True, "veri": route(params)}
         except ds.UserError as e:
             return {"ok": False, "hata": str(e)}
         except Exception as e:
             traceback.print_exc()
-            return {"ok": False, "hata": f"Beklenmeyen hata: {e}"}
+            return {"ok": False, "hata": ds.L(f"Beklenmeyen hata: {e}", f"Unexpected error: {e}")}
 
 
 def mac_identity():
@@ -347,8 +392,9 @@ def main():
 
     mac_identity()
     monitor.start()
+    rm.kill_orphans()
     # Oturum kapanırken gelen SIGTERM'de de arkada docker süreci kalmasın.
-    signal.signal(signal.SIGTERM, lambda *_: (term.close_all(), monitor._kill_children(), os._exit(0)))
+    signal.signal(signal.SIGTERM, lambda *_: (term.close_all(), rm.close_all(), monitor._kill_children(), os._exit(0)))
     atexit.register(term.close_all)
 
     webview.create_window(

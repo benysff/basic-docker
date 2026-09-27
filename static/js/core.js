@@ -64,7 +64,7 @@ function patch(el, content) {
 async function api(path, body) {
   // Sunucu yok: Python tarafındaki fonksiyonlar pywebview köprüsüyle doğrudan çağrılır.
   const r = await window.pywebview.api.call(path, body === undefined ? null : body);
-  if (!r || !r.ok) throw new Error((r && r.hata) || "Bilinmeyen hata");
+  if (!r || !r.ok) throw new Error((r && r.hata) || L("Bilinmeyen hata", "Unknown error"));
   return r.veri;
 }
 
@@ -72,8 +72,13 @@ const q = (params) => "?" + Object.entries(params)
   .filter(([, v]) => v !== undefined && v !== null && v !== "")
   .map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
 
+// ---------- Dil -----------------------------------------------------------------
+// Arayüz Türkçe (varsayılan) ya da İngilizce. L("Türkçe", "English") seçili dildeki metni verir.
+const isEN = () => S.prefs.lang === "en";
+const L = (tr, en) => (isEN() ? en : tr);
+const loc = () => (isEN() ? "en-US" : "tr-TR");
+
 // ---------- Biçimlendirme -----------------------------------------------------
-const TR = "tr-TR";
 const fmt = {
   bytes(n, digits = 1) {
     n = Number(n) || 0;
@@ -81,12 +86,13 @@ const fmt = {
     const units = ["KB", "MB", "GB", "TB"];
     let i = -1;
     do { n /= 1000; i++; } while (n >= 1000 && i < units.length - 1);
-    return `${n.toLocaleString(TR, { maximumFractionDigits: n >= 100 ? 0 : digits })} ${units[i]}`;
+    return `${n.toLocaleString(loc(), { maximumFractionDigits: n >= 100 ? 0 : digits })} ${units[i]}`;
   },
   pct(n, digits = 1) {
-    return "%" + (Number(n) || 0).toLocaleString(TR, { maximumFractionDigits: digits });
+    const v = (Number(n) || 0).toLocaleString(loc(), { maximumFractionDigits: digits });
+    return isEN() ? `${v}%` : `%${v}`;
   },
-  num(n) { return (Number(n) || 0).toLocaleString(TR); },
+  num(n) { return (Number(n) || 0).toLocaleString(loc()); },
   _t(v) {
     if (!v) return NaN;
     if (typeof v === "number") return v < 1e12 ? v * 1000 : v;
@@ -97,44 +103,47 @@ const fmt = {
     const t = fmt._t(v);
     if (isNaN(t)) return "";
     const s = Math.max(0, (Date.now() - t) / 1000);
-    if (s < 45) return "az önce";
-    const m = s / 60; if (m < 60) return `${Math.max(1, Math.round(m))} dakika önce`;
-    const h = m / 60; if (h < 24) return `${Math.round(h)} saat önce`;
-    const d = h / 24; if (d < 30) return `${Math.round(d)} gün önce`;
-    const mo = d / 30; if (mo < 12) return `${Math.round(mo)} ay önce`;
-    return `${Math.round(mo / 12)} yıl önce`;
+    if (s < 45) return L("az önce", "just now");
+    const ago = (n, tr, en) => L(`${n} ${tr} önce`, `${n} ${en}${n === 1 ? "" : "s"} ago`);
+    const m = s / 60; if (m < 60) return ago(Math.max(1, Math.round(m)), "dakika", "minute");
+    const h = m / 60; if (h < 24) return ago(Math.round(h), "saat", "hour");
+    const d = h / 24; if (d < 30) return ago(Math.round(d), "gün", "day");
+    const mo = d / 30; if (mo < 12) return ago(Math.round(mo), "ay", "month");
+    return ago(Math.round(mo / 12), "yıl", "year");
   },
   since(v) {
     const t = fmt._t(v);
     if (isNaN(t)) return "";
     const s = Math.max(0, (Date.now() - t) / 1000);
-    if (s < 60) return `${Math.round(s)} sn`;
-    const m = s / 60; if (m < 60) return `${Math.round(m)} dk`;
-    const h = m / 60; if (h < 48) return `${Math.floor(h)} sa ${Math.round(m % 60)} dk`;
-    return `${Math.floor(h / 24)} gün`;
+    if (s < 60) return L(`${Math.round(s)} sn`, `${Math.round(s)}s`);
+    const m = s / 60; if (m < 60) return L(`${Math.round(m)} dk`, `${Math.round(m)} min`);
+    const h = m / 60; if (h < 48) return L(`${Math.floor(h)} sa ${Math.round(m % 60)} dk`, `${Math.floor(h)}h ${Math.round(m % 60)}m`);
+    const d = Math.floor(h / 24);
+    return L(`${d} gün`, `${d} day${d === 1 ? "" : "s"}`);
   },
   date(v) {
     const t = fmt._t(v);
     if (isNaN(t)) return "";
-    return new Date(t).toLocaleString(TR, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    return new Date(t).toLocaleString(loc(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
   },
   time(v) {
     const t = fmt._t(v);
     if (isNaN(t)) return "";
-    return new Date(t).toLocaleTimeString(TR, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    return new Date(t).toLocaleTimeString(loc(), { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
   },
   day(v) {
     const t = fmt._t(v);
     if (isNaN(t)) return "";
     const d = new Date(t), now = new Date();
     const y = new Date(now); y.setDate(now.getDate() - 1);
-    if (d.toDateString() === now.toDateString()) return "Bugün";
-    if (d.toDateString() === y.toDateString()) return "Dün";
-    return d.toLocaleDateString(TR, { weekday: "long", day: "numeric", month: "long" });
+    if (d.toDateString() === now.toDateString()) return L("Bugün", "Today");
+    if (d.toDateString() === y.toDateString()) return L("Dün", "Yesterday");
+    return d.toLocaleDateString(loc(), { weekday: "long", day: "numeric", month: "long" });
   },
 };
-const upper = (s) => (s || "").toLocaleUpperCase("tr");
-const plural = (n, word) => `${fmt.num(n)} ${word}`;
+const upper = (s) => (s || "").toLocaleUpperCase(isEN() ? "en" : "tr");
+/** "7 parça" / "7 containers" — İngilizcede 1'den farklıysa sona "s" eklenir. */
+const plural = (n, word) => `${fmt.num(n)} ${word}${isEN() && n !== 1 && !/s$/.test(word) ? "s" : ""}`;
 
 function hue(key) {
   let h = 0;
@@ -142,7 +151,18 @@ function hue(key) {
   return h;
 }
 
-// ---------- Terimler: sade Türkçe ↔ teknik terimler --------------------------
+// ---------- Terimler: sade Türkçe ↔ teknik terimler (İngilizcede standart terimler) ----------
+const TERMS_EN = {
+  app: ["App", "Apps"],
+  container: ["Container", "Containers"],
+  image: ["Image", "Images"],
+  volume: ["Volume", "Volumes"],
+  network: ["Network", "Networks"],
+  port: ["Port", "Ports"],
+  logs: ["Logs", "Logs"],
+  env: ["Environment", "Environment"],
+  cleanup: ["Cleanup", "Cleanup"],
+};
 const TERMS = {
   app: ["Uygulama", "Uygulamalar", "Uygulama", "Uygulamalar"],
   container: ["Parça", "Parçalar", "Konteyner", "Konteynerler"],
@@ -155,12 +175,13 @@ const TERMS = {
   cleanup: ["Temizlik", "Temizlik", "Disk temizliği", "Disk temizliği"],
 };
 function T(key, pluralForm = false) {
+  if (isEN()) return TERMS_EN[key]?.[pluralForm ? 1 : 0] || key;
   const row = TERMS[key];
   if (!row) return key;
   const tech = S.prefs.dil === "teknik";
   return row[(tech ? 2 : 0) + (pluralForm ? 1 : 0)];
 }
-const Tl = (key, p) => T(key, p).toLocaleLowerCase("tr");
+const Tl = (key, p) => T(key, p).toLocaleLowerCase(isEN() ? "en" : "tr");
 
 // ---------- Durum ve olaylar ---------------------------------------------------
 const S = {
@@ -299,7 +320,7 @@ function icon(name, cls = "") {
 }
 
 // ---------- Panoya kopyalama ------------------------------------------------------
-async function copyText(text, label = "Kopyalandı") {
+async function copyText(text, label = L("Kopyalandı", "Copied")) {
   try {
     const r = await api("/api/kopyala", { metin: text });
     if (!r.tamam) throw new Error();
@@ -340,10 +361,10 @@ function renderToasts() {
         <div class="toast-icon">${ic}</div>
         <div class="toast-body">
           <div class="toast-title">${j.title}</div>
-          <div class="toast-text">${j.status === "calisiyor" ? (j.last || "Başlıyor…") : j.message}</div>
+          <div class="toast-text">${j.status === "calisiyor" ? (j.last || L("Başlıyor…", "Starting…")) : j.message}</div>
           <div class="toast-actions">
-            <button class="link" data-job="${j.id}">${j.status === "calisiyor" ? "Çıktıyı gör" : "Ayrıntılar"}</button>
-            ${j.status !== "calisiyor" ? html`<button class="link" data-close-toast="${j.id}">Kapat</button>` : ""}
+            <button class="link" data-job="${j.id}">${j.status === "calisiyor" ? L("Çıktıyı gör", "View output") : L("Ayrıntılar", "Details")}</button>
+            ${j.status !== "calisiyor" ? html`<button class="link" data-close-toast="${j.id}">${L("Kapat", "Dismiss")}</button>` : ""}
           </div>
         </div>
       </div>`;
@@ -414,7 +435,7 @@ const Modal = {
       <div class="modal-card">
         ${title ? html`<header class="modal-head">
           <div class="modal-titles"><h2 id="modal-title">${title}</h2>${sub ? html`<p>${sub}</p>` : ""}</div>
-          <button class="icon-btn" data-close aria-label="Kapat" title="Kapat (Esc)">${icon("close")}</button>
+          <button class="icon-btn" data-close aria-label="${L("Kapat", "Close")}" title="${L("Kapat (Esc)", "Close (Esc)")}">${icon("close")}</button>
         </header>` : ""}
         <div class="modal-body">${body}</div>
         ${foot ? html`<footer class="modal-foot">${foot}</footer>` : ""}
@@ -435,7 +456,7 @@ const Modal = {
 };
 
 /** Onay penceresi. Promise<{ok, checked}> ya da vazgeçilirse null döner. */
-function confirmDialog({ title, text = "", confirmText = "Tamam", danger = false, checkbox = null, icon: ic = null, extra = "" }) {
+function confirmDialog({ title, text = "", confirmText = L("Tamam", "OK"), danger = false, checkbox = null, icon: ic = null, extra = "" }) {
   return new Promise((resolve) => {
     Modal.open({
       title, size: "sm",
@@ -445,7 +466,7 @@ function confirmDialog({ title, text = "", confirmText = "Tamam", danger = false
         ${checkbox ? html`<label class="check danger-check"><input type="checkbox" id="cf-check">
           <span><b>${checkbox.label}</b>${checkbox.help ? html`<small>${checkbox.help}</small>` : ""}</span></label>` : ""}`,
       foot: html`
-        <button class="btn" data-close>Vazgeç</button>
+        <button class="btn" data-close>${L("Vazgeç", "Cancel")}</button>
         <button class="btn ${danger ? "danger-solid" : "primary"}" id="cf-go" autofocus>${ic ? icon(ic) : ""}${confirmText}</button>`,
       onMount(m) {
         Modal.resolve = resolve;
@@ -461,7 +482,7 @@ function confirmDialog({ title, text = "", confirmText = "Tamam", danger = false
 }
 
 /** Tek alanlı giriş penceresi. Promise<string|null> */
-function promptDialog({ title, label, value = "", placeholder = "", help = "", confirmText = "Kaydet", validate }) {
+function promptDialog({ title, label, value = "", placeholder = "", help = "", confirmText = L("Kaydet", "Save"), validate }) {
   return new Promise((resolve) => {
     Modal.open({
       title, size: "sm",
@@ -472,7 +493,7 @@ function promptDialog({ title, label, value = "", placeholder = "", help = "", c
           ${help ? html`<div class="help">${help}</div>` : ""}
           <div class="field-error" id="pd-err" role="alert"></div>
         </div>`,
-      foot: html`<button class="btn" data-close>Vazgeç</button><button class="btn primary" id="pd-go">${confirmText}</button>`,
+      foot: html`<button class="btn" data-close>${L("Vazgeç", "Cancel")}</button><button class="btn primary" id="pd-go">${confirmText}</button>`,
       onMount(m) {
         Modal.resolve = resolve;
         const input = $("#pd-in", m);

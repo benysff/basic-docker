@@ -5,7 +5,11 @@
    ===================================================================== */
 
 const CLEAN_COLORS = { images: "var(--c1)", cache: "var(--c2)", volumes: "var(--c3)", containers: "var(--c4)" };
-const CLEAN_LABELS = { images: "Kalıplar", cache: "Derleme önbelleği", volumes: "Veri kutuları", containers: "Parçalar" };
+const CLEAN_LABELS = {
+  images: ["Kalıplar", "Images"], cache: ["Derleme önbelleği", "Build cache"],
+  volumes: ["Veri kutuları", "Volumes"], containers: ["Parçalar", "Containers"],
+};
+const cleanLabel = (k) => L(...CLEAN_LABELS[k]);
 
 const CleanupView = {
   mount(root) {
@@ -18,8 +22,9 @@ const CleanupView = {
       <div class="page has-sticky-foot">
         ${pageHead({
           title: T("cleanup"),
-          desc: "Docker zamanla diskte büyük yer kaplar: eski kalıplar, derleme artıkları, unutulmuş veri kutuları. Güvenli olanlar önceden seçili; gerisini sen seç.",
-          actions: html`<button class="btn" data-retry>${icon("refresh")}Yeniden hesapla</button>`,
+          desc: L("Docker zamanla diskte büyük yer kaplar: eski kalıplar, derleme artıkları, unutulmuş veri kutuları. Güvenli olanlar önceden seçili; gerisini sen seç.",
+            "Over time Docker takes up a lot of disk: old images, build leftovers, forgotten volumes. The safe ones are preselected; you pick the rest."),
+          actions: html`<button class="btn" data-retry>${icon("refresh")}${L("Yeniden hesapla", "Recalculate")}</button>`,
         })}
         <div id="cl-body">${skeletonRows(6)}</div>
         <div id="cl-foot"></div>
@@ -96,17 +101,17 @@ const CleanupView = {
   async run() {
     const p = this.plan;
     const lines = [];
-    if (this.sel.cache && p.cache.size) lines.push(`Derleme önbelleği (${fmt.bytes(p.cache.size)})`);
-    if (this.sel.dangling && p.dangling.size) lines.push(`${p.dangling.items.length} sahipsiz kalıp (${fmt.bytes(p.dangling.size)})`);
-    if (this.sel.images.size) lines.push(`${this.sel.images.size} kullanılmayan kalıp`);
-    if (this.sel.stopped.size) lines.push(`${this.sel.stopped.size} kapalı parça`);
-    if (this.sel.volumes.size) lines.push(`${this.sel.volumes.size} veri kutusu — İÇİNDEKİ VERİLERLE BİRLİKTE`);
-    if (!lines.length) return flash("Temizlenecek bir şey seçmedin.", true);
+    if (this.sel.cache && p.cache.size) lines.push(L(`Derleme önbelleği (${fmt.bytes(p.cache.size)})`, `Build cache (${fmt.bytes(p.cache.size)})`));
+    if (this.sel.dangling && p.dangling.size) lines.push(L(`${p.dangling.items.length} sahipsiz kalıp (${fmt.bytes(p.dangling.size)})`, `${plural(p.dangling.items.length, "dangling image")} (${fmt.bytes(p.dangling.size)})`));
+    if (this.sel.images.size) lines.push(L(`${this.sel.images.size} kullanılmayan kalıp`, plural(this.sel.images.size, "unused image")));
+    if (this.sel.stopped.size) lines.push(L(`${this.sel.stopped.size} kapalı parça`, plural(this.sel.stopped.size, "stopped container")));
+    if (this.sel.volumes.size) lines.push(L(`${this.sel.volumes.size} veri kutusu — İÇİNDEKİ VERİLERLE BİRLİKTE`, `${plural(this.sel.volumes.size, "volume")} — WITH ALL THEIR DATA`));
+    if (!lines.length) return flash(L("Temizlenecek bir şey seçmedin.", "You didn't select anything to clean up."), true);
     const r = await confirmDialog({
-      title: `Yaklaşık ${fmt.bytes(this.selectedSize())} yer açılsın mı?`,
-      danger: this.sel.volumes.size > 0, confirmText: "Temizle", icon: "sparkles",
+      title: L(`Yaklaşık ${fmt.bytes(this.selectedSize())} yer açılsın mı?`, `Free about ${fmt.bytes(this.selectedSize())}?`),
+      danger: this.sel.volumes.size > 0, confirmText: L("Temizle", "Clean up"), icon: "sparkles",
       extra: html`<ul class="confirm-list">${lines.map((l) => html`<li>${l}</li>`)}</ul>
-        ${this.sel.volumes.size ? callout({ level: "err", text: "Seçtiğin veri kutuları kalıcı olarak silinecek. Geri alınamaz." }) : ""}`,
+        ${this.sel.volumes.size ? callout({ level: "err", text: L("Seçtiğin veri kutuları kalıcı olarak silinecek. Geri alınamaz.", "The volumes you selected will be deleted permanently. This cannot be undone.") }) : ""}`,
     });
     if (!r) return;
     const body = {
@@ -132,20 +137,20 @@ const CleanupView = {
           ${catKey ? html`<label class="check big"><input type="checkbox" data-cat="${catKey}" ${checked ? raw("checked") : ""} ${size ? "" : raw("disabled")}><span class="sr">${title}</span></label>`
             : html`<div class="clean-count" aria-hidden="true">${selCount || ""}</div>`}
           <div class="clean-text">
-            <h3>${title} ${level === "danger" ? pill("Dikkat", "err") : level === "safe" ? pill("Güvenli", "ok") : pill("Seçerek", "warn")}</h3>
+            <h3>${title} ${level === "danger" ? pill(L("Dikkat", "Careful"), "err") : level === "safe" ? pill(L("Güvenli", "Safe"), "ok") : pill(L("Seçerek", "Pick"), "warn")}</h3>
             <p>${desc}</p>
             ${note ? html`<p class="small muted">${note}</p>` : ""}
           </div>
           <div class="clean-size">
             <b class="mono">${fmt.bytes(size)}</b>
-            <span class="muted small">${count} öğe</span>
+            <span class="muted small">${L(`${count} öğe`, plural(count, "item"))}</span>
           </div>
         </div>
         ${items && items.length ? html`
           <div class="clean-tools">
-            <button class="link" data-open="${key}" aria-expanded="${open}">${icon(open ? "chevronDown" : "chevronRight")}${open ? "Listeyi gizle" : "Listeyi göster ve seç"}</button>
-            <button class="link" data-all="${key}">${items.every((i) => this.sel[key].has(i[itemKey])) ? "Seçimi kaldır" : "Hepsini seç"}</button>
-            ${selCount ? html`<span class="muted small">${selCount} seçili</span>` : ""}
+            <button class="link" data-open="${key}" aria-expanded="${open}">${icon(open ? "chevronDown" : "chevronRight")}${open ? L("Listeyi gizle", "Hide list") : L("Listeyi göster ve seç", "Show list and pick")}</button>
+            <button class="link" data-all="${key}">${items.every((i) => this.sel[key].has(i[itemKey])) ? L("Seçimi kaldır", "Unselect all") : L("Hepsini seç", "Select all")}</button>
+            ${selCount ? html`<span class="muted small">${L(`${selCount} seçili`, `${selCount} selected`)}</span>` : ""}
           </div>
           ${open ? html`<ul class="clean-items">${items.map((it) => itemRow(it))}</ul>` : ""}` : ""}
       </section>`;
@@ -155,7 +160,7 @@ const CleanupView = {
     const body = $("#cl-body", this.root);
     const foot = $("#cl-foot", this.root);
     if (this.error) { patch(foot, ""); return patch(body, errorState(this.error)); }
-    if (!this.plan) { patch(foot, ""); return patch(body, html`<div class="calc">${icon("sparkles")}<span>Docker'ın disk kullanımı hesaplanıyor…</span></div>${skeletonRows(5)}`); }
+    if (!this.plan) { patch(foot, ""); return patch(body, html`<div class="calc">${icon("sparkles")}<span>${L("Docker'ın disk kullanımı hesaplanıyor…", "Calculating Docker's disk usage…")}</span></div>${skeletonRows(5)}`); }
     const p = this.plan;
     const total = Object.values(p.usage).reduce((a, b) => a + b, 0) || 1;
     const safe = p.cache.size + p.dangling.size;
@@ -167,61 +172,66 @@ const CleanupView = {
     const itemStopped = (it) => html`
       <li><label class="check"><input type="checkbox" data-item="stopped" value="${it.name}" ${this.sel.stopped.has(it.name) ? raw("checked") : ""}>
         <span class="clean-item"><span class="ellipsis"><span class="strong">${it.app_name !== it.name ? it.app_name + " · " : ""}${shortRole(it.role)}</span> <span class="mono muted small">${it.name}</span></span>
-        <span class="muted small">${it.finished ? fmt.ago(it.finished) + " kapandı" : ""}</span>
-        ${it.compose ? pill("Compose", "") : pill("Geri gelmez", "warn")}<b class="mono small">${fmt.bytes(it.size)}</b></span></label></li>`;
+        <span class="muted small">${it.finished ? L(`${fmt.ago(it.finished)} kapandı`, `stopped ${fmt.ago(it.finished)}`) : ""}</span>
+        ${it.compose ? pill("Compose", "") : pill(L("Geri gelmez", "Not recoverable"), "warn")}<b class="mono small">${fmt.bytes(it.size)}</b></span></label></li>`;
     const itemVol = (it) => html`
       <li><label class="check"><input type="checkbox" data-item="volumes" value="${it.name}" ${this.sel.volumes.has(it.name) ? raw("checked") : ""}>
-        <span class="clean-item"><span class="ellipsis">${it.anonymous ? html`<span class="strong">İsimsiz kutu</span> <span class="mono muted small">${it.name.slice(0, 12)}…</span>` : html`<span class="mono strong">${it.name}</span>`}
+        <span class="clean-item"><span class="ellipsis">${it.anonymous ? html`<span class="strong">${L("İsimsiz kutu", "Anonymous volume")}</span> <span class="mono muted small">${it.name.slice(0, 12)}…</span>` : html`<span class="mono strong">${it.name}</span>`}
           ${it.app_name ? html` <span class="muted small">(${it.app_name})</span>` : ""}</span>
-        <button class="btn xs" data-backup-vol="${it.name}" title="Silmeden önce yedek al">${icon("archive")}Yedekle</button>
+        <button class="btn xs" data-backup-vol="${it.name}" title="${L("Silmeden önce yedek al", "Back it up before deleting")}">${icon("archive")}${L("Yedekle", "Back up")}</button>
         <b class="mono small">${fmt.bytes(it.size)}</b></span></label></li>`;
 
     patch(body, html`
       <section class="panel usage-panel">
         <div class="usage-top">
-          <div><div class="muted small">Docker'ın diskte kapladığı yer (yaklaşık)</div><div class="usage-total">${fmt.bytes(total)}</div></div>
-          <div class="usage-reclaim"><div class="muted small">Güvenle boşaltılabilir</div><div class="usage-total accent">${fmt.bytes(safe)}</div>
-            <div class="muted small">Her şey seçilirse en fazla ${fmt.bytes(most)}</div></div>
+          <div><div class="muted small">${L("Docker'ın diskte kapladığı yer (yaklaşık)", "Disk used by Docker (approx.)")}</div><div class="usage-total">${fmt.bytes(total)}</div></div>
+          <div class="usage-reclaim"><div class="muted small">${L("Güvenle boşaltılabilir", "Safe to free")}</div><div class="usage-total accent">${fmt.bytes(safe)}</div>
+            <div class="muted small">${L(`Her şey seçilirse en fazla ${fmt.bytes(most)}`, `Up to ${fmt.bytes(most)} if everything is selected`)}</div></div>
         </div>
-        <div class="stack-bar" role="img" aria-label="Disk kullanımı dağılımı">
-          ${Object.entries(p.usage).filter(([, v]) => v > 0).map(([k, v]) => html`<span style="width:${(v / total) * 100}%;background:${CLEAN_COLORS[k]}" title="${CLEAN_LABELS[k]}: ${fmt.bytes(v)}"></span>`)}
+        <div class="stack-bar" role="img" aria-label="${L("Disk kullanımı dağılımı", "Disk usage breakdown")}">
+          ${Object.entries(p.usage).filter(([, v]) => v > 0).map(([k, v]) => html`<span style="width:${(v / total) * 100}%;background:${CLEAN_COLORS[k]}" title="${cleanLabel(k)}: ${fmt.bytes(v)}"></span>`)}
         </div>
-        <ul class="legend">${Object.entries(p.usage).map(([k, v]) => html`<li><span class="swatch" style="background:${CLEAN_COLORS[k]}"></span>${CLEAN_LABELS[k]}<b class="mono">${fmt.bytes(v)}</b></li>`)}</ul>
+        <ul class="legend">${Object.entries(p.usage).map(([k, v]) => html`<li><span class="swatch" style="background:${CLEAN_COLORS[k]}"></span>${cleanLabel(k)}<b class="mono">${fmt.bytes(v)}</b></li>`)}</ul>
       </section>
 
       ${this.category({
         key: "cache", catKey: "cache", checked: this.sel.cache,
-        title: "Derleme önbelleği", size: p.cache.size, count: p.cache.count,
-        desc: "Kendi kodundan kalıp derlerken biriken ara dosyalar. Silmek güvenlidir; sadece bir sonraki derleme biraz daha uzun sürer.",
+        title: L("Derleme önbelleği", "Build cache"), size: p.cache.size, count: p.cache.count,
+        desc: L("Kendi kodundan kalıp derlerken biriken ara dosyalar. Silmek güvenlidir; sadece bir sonraki derleme biraz daha uzun sürer.",
+          "Intermediate files left over from building images from your code. Safe to delete; the next build just takes a bit longer."),
       })}
       ${this.category({
         key: "dangling", catKey: "dangling", checked: this.sel.dangling,
-        title: "Sahipsiz kalıplar", size: p.dangling.size, count: p.dangling.items.length,
-        desc: "Adı kalmamış eski kalıp sürümleri. Aynı adla yenisi indirilince ya da derlenince eskisi böyle kalır. Hiçbir parça kullanmıyor.",
+        title: L("Sahipsiz kalıplar", "Dangling images"), size: p.dangling.size, count: p.dangling.items.length,
+        desc: L("Adı kalmamış eski kalıp sürümleri. Aynı adla yenisi indirilince ya da derlenince eskisi böyle kalır. Hiçbir parça kullanmıyor.",
+          "Old image versions that lost their name. They are left behind when a newer one with the same name is pulled or built. No container uses them."),
       })}
       ${this.category({
-        key: "images", level: "choose", title: "Kullanılmayan kalıplar", size: p.unused_images.size, count: p.unused_images.items.length,
+        key: "images", level: "choose", title: L("Kullanılmayan kalıplar", "Unused images"), size: p.unused_images.size, count: p.unused_images.items.length,
         items: p.unused_images.items, itemKey: "full_id", itemRow: itemImg,
-        desc: "Hiçbir parçanın kullanmadığı kalıplar. Silersen, lazım olduğunda tekrar indirilir (kendi derlediklerin tekrar derlenir).",
+        desc: L("Hiçbir parçanın kullanmadığı kalıplar. Silersen, lazım olduğunda tekrar indirilir (kendi derlediklerin tekrar derlenir).",
+          "Images no container uses. If you delete them they are pulled again when needed (your own builds are rebuilt)."),
       })}
       ${this.category({
-        key: "stopped", level: "choose", title: "Kapalı parçalar", size: p.stopped.size, count: p.stopped.items.length,
+        key: "stopped", level: "choose", title: L("Kapalı parçalar", "Stopped containers"), size: p.stopped.size, count: p.stopped.items.length,
         items: p.stopped.items, itemKey: "name", itemRow: itemStopped,
-        desc: "Şu an çalışmayan parçalar. Veri kutularına dokunulmaz.",
-        note: "“Compose” etiketliler proje klasöründen tekrar kurulabilir. “Geri gelmez” olanlar tek başına açılmış parçalar; silersen ayarlarıyla birlikte gider.",
+        desc: L("Şu an çalışmayan parçalar. Veri kutularına dokunulmaz.", "Containers that aren't running right now. Their volumes are not touched."),
+        note: L("“Compose” etiketliler proje klasöründen tekrar kurulabilir. “Geri gelmez” olanlar tek başına açılmış parçalar; silersen ayarlarıyla birlikte gider.",
+          "The ones tagged “Compose” can be recreated from their project folder. “Not recoverable” ones were started on their own; deleting them loses their settings too."),
       })}
       ${this.category({
-        key: "volumes", level: "danger", title: "Sahipsiz veri kutuları", size: p.volumes.size, count: p.volumes.items.length,
+        key: "volumes", level: "danger", title: L("Sahipsiz veri kutuları", "Orphaned volumes"), size: p.volumes.size, count: p.volumes.items.length,
         items: p.volumes.items, itemKey: "name", itemRow: itemVol,
-        desc: "Hiçbir parçanın bağlı olmadığı veri kutuları. İçlerinde eski veritabanı kayıtları olabilir. Silinen veri geri gelmez.",
-        note: "Emin değilsen önce yanındaki “Yedekle” ile .tar.gz yedeğini al.",
+        desc: L("Hiçbir parçanın bağlı olmadığı veri kutuları. İçlerinde eski veritabanı kayıtları olabilir. Silinen veri geri gelmez.",
+          "Volumes no container is attached to. They may contain old database records. Deleted data is gone for good."),
+        note: L("Emin değilsen önce yanındaki “Yedekle” ile .tar.gz yedeğini al.", "If you are not sure, take a .tar.gz backup first with the “Back up” button next to it."),
       })}`);
 
     const sel = this.selectedSize();
     patch(foot, html`
       <div class="sticky-foot">
-        <div><div class="muted small">Seçilenlerle açılacak yer</div><div class="sticky-size mono">${fmt.bytes(sel)}</div></div>
-        <button class="btn ${this.sel.volumes.size ? "danger-solid" : "primary"} lg" data-run ${sel ? "" : raw("disabled")}>${icon("sparkles")}Temizle</button>
+        <div><div class="muted small">${L("Seçilenlerle açılacak yer", "Space freed by the selection")}</div><div class="sticky-size mono">${fmt.bytes(sel)}</div></div>
+        <button class="btn ${this.sel.volumes.size ? "danger-solid" : "primary"} lg" data-run ${sel ? "" : raw("disabled")}>${icon("sparkles")}${L("Temizle", "Clean up")}</button>
       </div>`);
   },
 };

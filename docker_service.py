@@ -64,6 +64,21 @@ class UserError(Exception):
     """Kullanıcıya olduğu gibi gösterilecek, anlaşılır hata."""
 
 
+# Arayüz dili: "tr" (varsayılan) ya da "en". Ayarlardan okunur, arayüzden değiştirilir.
+LANG = "tr"
+
+
+def set_lang(lang):
+    global LANG
+    LANG = "en" if lang == "en" else "tr"
+    return LANG
+
+
+def L(tr, en):
+    """Seçili dile göre metni döndürür."""
+    return en if LANG == "en" else tr
+
+
 def strip_ansi(text):
     return ANSI_RE.sub("", text)
 
@@ -71,7 +86,7 @@ def strip_ansi(text):
 def docker(*args, timeout=30, cwd=None):
     """Docker komutunu çalıştırır, (çıkış_kodu, stdout, stderr) döndürür."""
     if not DOCKER:
-        return 127, "", "Docker bulunamadı"
+        return 127, "", L("Docker bulunamadı", "Docker not found")
     try:
         p = subprocess.run(
             [DOCKER, *args],
@@ -85,7 +100,7 @@ def docker(*args, timeout=30, cwd=None):
         )
         return p.returncode, p.stdout, p.stderr
     except subprocess.TimeoutExpired:
-        return 124, "", "Docker yanıt vermedi (zaman aşımı)."
+        return 124, "", L("Docker yanıt vermedi (zaman aşımı).", "Docker did not respond (timed out).")
     except OSError as e:
         return 127, "", str(e)
 
@@ -123,6 +138,9 @@ def load_settings():
         return _read_settings()
 
 
+set_lang(load_settings()["arayuz"].get("lang", "tr"))
+
+
 def update_settings(fn):
     """Ayarları kilitli şekilde okur, fn ile değiştirir, değiştiyse diske yazar."""
     with _settings_lock:
@@ -143,76 +161,106 @@ def update_settings(fn):
 # Parçaların sade Türkçe açıklamaları
 # ---------------------------------------------------------------------------
 
-# (desen, tür, başlık, açıklama). Önce servis adındaki özel görevlere bakılır,
-# sonra bilinen imajlara, sonra genel servis adlarına, en son genel imajlara.
+# (desen, tür, başlık, açıklama, İngilizce başlık, İngilizce açıklama). Önce servis adındaki özel
+# görevlere bakılır, sonra bilinen imajlara, sonra genel servis adlarına, en son genel imajlara.
 SERVICE_SPECIFIC = [
     (r"beat|schedul|cron|timer", "scheduler", "Zamanlayıcı",
-     "Belirli saatlerde otomatik işleri tetikler (her gece rapor, her saat temizlik gibi)."),
+     "Belirli saatlerde otomatik işleri tetikler (her gece rapor, her saat temizlik gibi).",
+     "Scheduler", "Triggers jobs at set times (a nightly report, an hourly cleanup…)."),
     (r"worker|celery|sidekiq|queue|consumer|jobs?\b", "worker", "Arka plan işçisi",
-     "Kullanıcıyı bekletmeden arka planda iş yapar (e-posta gönderme, rapor hazırlama gibi)."),
+     "Kullanıcıyı bekletmeden arka planda iş yapar (e-posta gönderme, rapor hazırlama gibi).",
+     "Background worker", "Does work in the background without making users wait (sending e-mail, building reports…)."),
     (r"tailwind|vite|webpack|assets|watch", "build", "Tasarım / kod derleyici",
-     "Geliştirme sırasında CSS ve JavaScript dosyalarını otomatik hazırlar."),
-    (r"backup|yedek", "backup", "Yedekleyici", "Verilerin düzenli olarak yedeğini alır."),
+     "Geliştirme sırasında CSS ve JavaScript dosyalarını otomatik hazırlar.",
+     "Asset builder", "Builds CSS and JavaScript automatically during development."),
+    (r"backup|yedek", "backup", "Yedekleyici", "Verilerin düzenli olarak yedeğini alır.",
+     "Backup job", "Backs up the data on a schedule."),
     (r"migrat|seed|^init|setup", "task", "Kurulum görevi",
-     "Bir kere çalışıp veritabanını hazırlar, sonra kapanır. Kapalı görünmesi normaldir."),
+     "Bir kere çalışıp veritabanını hazırlar, sonra kapanır. Kapalı görünmesi normaldir.",
+     "Setup task", "Runs once to prepare the database, then exits. Seeing it stopped is normal."),
     (r"(^|[-_.])(ui|e2e|unit|int)?tests?($|[-_.\d])|e2e|playwright|cypress|selenium", "test", "Test aracı",
-     "Uygulamayı otomatik test eder. İşi bitince kapanır; kapalı görünmesi normaldir."),
+     "Uygulamayı otomatik test eder. İşi bitince kapanır; kapalı görünmesi normaldir.",
+     "Test runner", "Tests the app automatically and exits when done. Seeing it stopped is normal."),
 ]
+
+_DB_DESC = ("Uygulamanın bilgilerini (kullanıcılar, kayıtlar, siparişler…) kalıcı olarak saklar.",
+            "Stores the app's data (users, records, orders…) permanently.")
 
 IMAGE_KNOWN = [
     (r"adminer|pgadmin|phpmyadmin|mongo-express|redisinsight|dbgate", "panel", "Veritabanı paneli",
-     "Veritabanını tarayıcıdan görüp düzenlemeni sağlar."),
-    (r"postgres|postgis|timescale", "db", "Veritabanı (PostgreSQL)",
-     "Uygulamanın bilgilerini (kullanıcılar, kayıtlar, siparişler…) kalıcı olarak saklar."),
-    (r"mysql|mariadb|percona", "db", "Veritabanı (MySQL)",
-     "Uygulamanın bilgilerini (kullanıcılar, kayıtlar, siparişler…) kalıcı olarak saklar."),
+     "Veritabanını tarayıcıdan görüp düzenlemeni sağlar.",
+     "Database admin panel", "Lets you browse and edit the database from your browser."),
+    (r"postgres|postgis|timescale", "db", "Veritabanı (PostgreSQL)", _DB_DESC[0],
+     "Database (PostgreSQL)", _DB_DESC[1]),
+    (r"mysql|mariadb|percona", "db", "Veritabanı (MySQL)", _DB_DESC[0],
+     "Database (MySQL)", _DB_DESC[1]),
     (r"mongo", "db", "Veritabanı (MongoDB)",
-     "Uygulamanın bilgilerini belge (JSON) şeklinde kalıcı olarak saklar."),
+     "Uygulamanın bilgilerini belge (JSON) şeklinde kalıcı olarak saklar.",
+     "Database (MongoDB)", "Stores the app's data permanently as documents (JSON)."),
     (r"redis|valkey|keydb|dragonfly", "cache", "Hızlı hafıza (Redis)",
-     "Sık kullanılan bilgileri hafızada tutar; oturumlar, önbellek ve iş kuyrukları için kullanılır."),
-    (r"memcache", "cache", "Hızlı hafıza (Memcached)", "Sık kullanılan bilgileri hafızada tutar."),
+     "Sık kullanılan bilgileri hafızada tutar; oturumlar, önbellek ve iş kuyrukları için kullanılır.",
+     "In-memory store (Redis)", "Keeps frequently used data in memory: sessions, caching and job queues."),
+    (r"memcache", "cache", "Hızlı hafıza (Memcached)", "Sık kullanılan bilgileri hafızada tutar.",
+     "In-memory cache (Memcached)", "Keeps frequently used data in memory."),
     (r"nginx|caddy|traefik|httpd|apache|haproxy|envoy", "web", "Web sunucusu (kapı görevlisi)",
-     "Dışarıdan gelen istekleri karşılar ve uygulamanın doğru parçasına yönlendirir."),
+     "Dışarıdan gelen istekleri karşılar ve uygulamanın doğru parçasına yönlendirir.",
+     "Web server (gatekeeper)", "Receives incoming requests and routes them to the right part of the app."),
     (r"mailpit|mailhog|maildev|smtp", "mail", "Test e-posta kutusu",
-     "Uygulamanın gönderdiği e-postaları yakalar; gerçek kişilere gitmez, buradan okursun."),
+     "Uygulamanın gönderdiği e-postaları yakalar; gerçek kişilere gitmez, buradan okursun.",
+     "Test mailbox", "Catches the e-mails your app sends so they never reach real people; read them here."),
     (r"rabbitmq|kafka|nats|activemq", "queue", "Mesaj kuyruğu",
-     "Parçalar arasında iş/mesaj taşır; biri iş bırakır, diğeri sırayla alıp yapar."),
+     "Parçalar arasında iş/mesaj taşır; biri iş bırakır, diğeri sırayla alıp yapar.",
+     "Message queue", "Carries jobs/messages between parts: one drops work off, another picks it up in order."),
     (r"minio|localstack|azurite", "storage", "Dosya deposu (S3)",
-     "Yüklenen dosyaları (resim, belge) saklar. Amazon S3'ün bilgisayarındaki kopyası gibi."),
+     "Yüklenen dosyaları (resim, belge) saklar. Amazon S3'ün bilgisayarındaki kopyası gibi.",
+     "File storage (S3)", "Stores uploaded files (images, documents). Like a local copy of Amazon S3."),
     (r"elasticsearch|opensearch|meilisearch|typesense|solr", "search", "Arama motoru",
-     "Uygulamadaki aramaları hızlı ve akıllı yapar."),
+     "Uygulamadaki aramaları hızlı ve akıllı yapar.",
+     "Search engine", "Makes search in the app fast and smart."),
     (r"buildkit", "build", "Derleme yardımcısı (Docker)",
-     "Docker'ın imaj derlerken kullandığı yardımcı. Kapalı olması normaldir, silebilirsin."),
-    (r"n8n", "app", "Otomasyon aracı (n8n)", "Sürükle-bırak ile otomasyonlar kurduğun panel."),
+     "Docker'ın imaj derlerken kullandığı yardımcı. Kapalı olması normaldir, silebilirsin.",
+     "Build helper (Docker)", "Helper Docker uses to build images. Seeing it stopped is normal; you can delete it."),
+    (r"n8n", "app", "Otomasyon aracı (n8n)", "Sürükle-bırak ile otomasyonlar kurduğun panel.",
+     "Automation tool (n8n)", "A drag-and-drop panel for building automations."),
     (r"grafana|prometheus|loki|uptime-kuma", "monitor", "İzleme aracı",
-     "Uygulamanın sağlığını ve istatistiklerini grafiklerle gösterir."),
-    (r"ollama", "model", "Model sunucusu (Ollama)", "Bilgisayarında yerel model sunucusu çalıştırır."),
+     "Uygulamanın sağlığını ve istatistiklerini grafiklerle gösterir.",
+     "Monitoring tool", "Shows the app's health and statistics in charts."),
+    (r"ollama", "model", "Model sunucusu (Ollama)", "Bilgisayarında yerel model sunucusu çalıştırır.",
+     "Model server (Ollama)", "Runs a local model server on your computer."),
 ]
 
 SERVICE_GENERIC = [
     (r"^(db|database|postgres|pg|mysql|mariadb|mongo)", "db", "Veritabanı",
-     "Uygulamanın bilgilerini kalıcı olarak saklar."),
-    (r"redis|cache", "cache", "Hızlı hafıza", "Sık kullanılan bilgileri hafızada tutar."),
+     "Uygulamanın bilgilerini kalıcı olarak saklar.", "Database", "Stores the app's data permanently."),
+    (r"redis|cache", "cache", "Hızlı hafıza", "Sık kullanılan bilgileri hafızada tutar.",
+     "Cache", "Keeps frequently used data in memory."),
     (r"front|^ui$|client|spa|next|nuxt|react|vue|svelte", "frontend", "Ön yüz (arayüz)",
-     "Kullanıcının tarayıcıda gördüğü ekranları sunar."),
+     "Kullanıcının tarayıcıda gördüğü ekranları sunar.",
+     "Frontend (UI)", "Serves the screens users see in the browser."),
     (r"back|api|server", "backend", "Arka uç (API)",
-     "Uygulamanın beyni: iş kurallarını çalıştırır, veritabanıyla konuşur."),
+     "Uygulamanın beyni: iş kurallarını çalıştırır, veritabanıyla konuşur.",
+     "Backend (API)", "The brain of the app: runs the business logic and talks to the database."),
     (r"web|app|site|main|django|rails|laravel|flask|fastapi", "app", "Ana uygulama",
-     "Yazdığın kodun çalıştığı yer. Siteyi/uygulamayı asıl bu parça çalıştırır."),
+     "Yazdığın kodun çalıştığı yer. Siteyi/uygulamayı asıl bu parça çalıştırır.",
+     "Main app", "Where your code runs. This part actually serves the site/app."),
     (r"proxy|gateway", "web", "Web sunucusu (kapı görevlisi)",
-     "Dışarıdan gelen istekleri karşılar ve doğru parçaya yönlendirir."),
-    (r"mail|smtp", "mail", "E-posta", "E-posta ile ilgili işleri yapar."),
+     "Dışarıdan gelen istekleri karşılar ve doğru parçaya yönlendirir.",
+     "Web server (gatekeeper)", "Receives incoming requests and routes them to the right part."),
+    (r"mail|smtp", "mail", "E-posta", "E-posta ile ilgili işleri yapar.", "E-mail", "Handles e-mail related work."),
 ]
 
 IMAGE_GENERIC = [
-    (r"^(node|bun|deno)", "app", "Node.js uygulaması", "JavaScript/TypeScript kodu çalıştıran parça."),
-    (r"^python|^pypy", "app", "Python uygulaması", "Python kodu çalıştıran parça."),
-    (r"^php|laravel|wordpress", "app", "PHP uygulaması", "PHP kodu çalıştıran parça."),
-    (r"^ruby|rails", "app", "Ruby uygulaması", "Ruby kodu çalıştıran parça."),
-    (r"^golang|^go$", "app", "Go uygulaması", "Go kodu çalıştıran parça."),
-    (r"openjdk|temurin|java|maven|gradle", "app", "Java uygulaması", "Java kodu çalıştıran parça."),
-    (r"dotnet|aspnet", "app", ".NET uygulaması", ".NET kodu çalıştıran parça."),
-    (r"^(alpine|ubuntu|debian|busybox|curl)", "other", "Yardımcı araç", "Küçük bir yardımcı/deneme parçası."),
+    (r"^(node|bun|deno)", "app", "Node.js uygulaması", "JavaScript/TypeScript kodu çalıştıran parça.",
+     "Node.js app", "Runs JavaScript/TypeScript code."),
+    (r"^python|^pypy", "app", "Python uygulaması", "Python kodu çalıştıran parça.", "Python app", "Runs Python code."),
+    (r"^php|laravel|wordpress", "app", "PHP uygulaması", "PHP kodu çalıştıran parça.", "PHP app", "Runs PHP code."),
+    (r"^ruby|rails", "app", "Ruby uygulaması", "Ruby kodu çalıştıran parça.", "Ruby app", "Runs Ruby code."),
+    (r"^golang|^go$", "app", "Go uygulaması", "Go kodu çalıştıran parça.", "Go app", "Runs Go code."),
+    (r"openjdk|temurin|java|maven|gradle", "app", "Java uygulaması", "Java kodu çalıştıran parça.",
+     "Java app", "Runs Java code."),
+    (r"dotnet|aspnet", "app", ".NET uygulaması", ".NET kodu çalıştıran parça.", ".NET app", "Runs .NET code."),
+    (r"^(alpine|ubuntu|debian|busybox|curl)", "other", "Yardımcı araç", "Küçük bir yardımcı/deneme parçası.",
+     "Utility", "A small helper/test container."),
 ]
 
 KIND_ORDER = ["frontend", "app", "backend", "web", "db", "cache", "queue", "storage", "search",
@@ -227,9 +275,9 @@ NON_HTTP_PORTS = {5432, 5433, 3306, 33060, 27017, 6379, 6380, 5672, 1025, 11211,
 
 
 def _match(rules, text):
-    for pattern, kind, title, desc in rules:
+    for pattern, kind, title, desc, title_en, desc_en in rules:
         if text and re.search(pattern, text):
-            return {"kind": kind, "title": title, "desc": desc}
+            return {"kind": kind, "title": L(title, title_en), "desc": L(desc, desc_en)}
     return None
 
 
@@ -254,7 +302,8 @@ def describe_role(service, image, name="", project=""):
         or _match(IMAGE_KNOWN, full)
         or _match(SERVICE_GENERIC, service)
         or _match(IMAGE_GENERIC, base)
-        or {"kind": "other", "title": "Uygulama parçası", "desc": "Uygulamanın bir bölümü."}
+        or {"kind": "other", "title": L("Uygulama parçası", "App component"),
+            "desc": L("Uygulamanın bir bölümü.", "Part of the app.")}
     )
 
 
@@ -264,23 +313,27 @@ def container_status(state):
     code = state.get("ExitCode", 0)
     if status == "running":
         if health == "unhealthy":
-            return "err", "Çalışıyor ama sağlıksız", "Sağlık kontrolünden geçemiyor. Kayıtlara bak."
+            return "err", L("Çalışıyor ama sağlıksız", "Running but unhealthy"), \
+                L("Sağlık kontrolünden geçemiyor. Kayıtlara bak.", "It keeps failing its health check. Check the logs.")
         if health == "starting":
-            return "warn", "Açılıyor…", "Hazır olması bekleniyor."
-        return "ok", "Çalışıyor", ""
+            return "warn", L("Açılıyor…", "Starting…"), L("Hazır olması bekleniyor.", "Waiting for it to become ready.")
+        return "ok", L("Çalışıyor", "Running"), ""
     if status == "restarting":
-        return "err", "Sürekli çöküyor", "Açılıp tekrar kapanıyor. Kayıtlara bakıp hatayı bul."
+        return "err", L("Sürekli çöküyor", "Crash-looping"), \
+            L("Açılıp tekrar kapanıyor. Kayıtlara bakıp hatayı bul.", "It keeps starting and crashing. Check the logs for the error.")
     if status == "paused":
-        return "warn", "Duraklatılmış", ""
+        return "warn", L("Duraklatılmış", "Paused"), ""
     if status == "created":
-        return "off", "Hiç başlatılmadı", ""
+        return "off", L("Hiç başlatılmadı", "Never started"), ""
     if status == "dead":
-        return "err", "Bozuk", "Silip yeniden oluşturman gerekebilir."
+        return "err", L("Bozuk", "Dead"), L("Silip yeniden oluşturman gerekebilir.", "You may need to delete and recreate it.")
     if state.get("OOMKilled"):
-        return "err", "Belleği yetmedi, kapandı", "Parça fazla bellek kullandı ve Docker onu kapattı."
+        return "err", L("Belleği yetmedi, kapandı", "Out of memory, stopped"), \
+            L("Parça fazla bellek kullandı ve Docker onu kapattı.", "It used too much memory and Docker stopped it.")
     if code in (0, 137, 143):
-        return "off", "Kapalı", ""
-    return "err", f"Hata verip kapandı (kod {code})", "Kayıtlara bak; sebebi genelde son satırlarda yazar."
+        return "off", L("Kapalı", "Stopped"), ""
+    return "err", L(f"Hata verip kapandı (kod {code})", f"Exited with an error (code {code})"), \
+        L("Kayıtlara bak; sebebi genelde son satırlarda yazar.", "Check the logs; the reason is usually in the last lines.")
 
 
 # ---------------------------------------------------------------------------
@@ -371,7 +424,8 @@ def connection_info(base, env, cmd, ports, alias):
     for s in secret_values:
         if s:
             masked = masked.replace(quote(s, safe=""), "••••••").replace(s, "••••••")
-    return {"text": text, "masked": masked, "scope": scope, "has_secret": masked != text}
+    return {"text": text, "masked": masked, "scope": scope, "has_secret": masked != text,
+            "port": p if scope == "local" else None}
 
 
 # ---------------------------------------------------------------------------
@@ -458,8 +512,9 @@ def build_container(attrs):
     service = (labels.get("com.docker.compose.service") or labels.get("basicdocker.role") or name)
     project = labels.get("com.docker.compose.project") or labels.get("basicdocker.app") or ""
     if labels.get("com.docker.compose.oneoff") == "True":
-        role = {"kind": "task", "title": "Tek seferlik komut",
-                "desc": "'docker compose run' ile bir kere çalıştırılmış komut. Kapalı olması normaldir."}
+        role = {"kind": "task", "title": L("Tek seferlik komut", "One-off command"),
+                "desc": L("'docker compose run' ile bir kere çalıştırılmış komut. Kapalı olması normaldir.",
+                          "A command run once with 'docker compose run'. Seeing it stopped is normal.")}
     else:
         role = describe_role(service, image, name, project)
     level, status_text, status_hint = container_status(state)
@@ -536,19 +591,22 @@ def _app_state(cs):
     troubled = [c for c in cs if c["state"] == "restarting" or c["health"] == "unhealthy"]
 
     if total == 0:
-        return "empty", "Kurulu değil", "Parçalar silinmiş. Başlat'a basarsan proje klasöründen yeniden kurulur."
+        return "empty", L("Kurulu değil", "Not installed"), L("Parçalar silinmiş. Başlat'a basarsan proje klasöründen yeniden kurulur.",
+                                                          "Its containers were removed. Press Start to recreate them from the project folder.")
     if troubled:
         names = ", ".join(c["role_title"] for c in troubled[:2])
-        return "problem", "Sorun var", f"Sorunlu parça: {names}"
+        return "problem", L("Sorun var", "Problem"), L(f"Sorunlu parça: {names}", f"Having trouble: {names}")
     hint = ""
     if crashed:
-        hint = f"{len(crashed)} parça hata verip kapanmış: " + ", ".join(c["role_title"] for c in crashed[:2])
+        hint = L(f"{len(crashed)} parça hata verip kapanmış: ", f"{len(crashed)} exited with an error: ") + \
+            ", ".join(c["role_title"] for c in crashed[:2])
     if expected and exp_running == len(expected):
-        return "running", "Çalışıyor", hint
+        return "running", L("Çalışıyor", "Running"), hint
     if running == 0:
-        return "stopped", "Kapalı", hint
+        return "stopped", L("Kapalı", "Stopped"), hint
     off = [c["role_title"] for c in expected if not c["running"]]
-    return "partial", f"Kısmen çalışıyor ({running}/{total})", hint or ("Kapalı: " + ", ".join(off[:3]))
+    return "partial", L(f"Kısmen çalışıyor ({running}/{total})", f"Partly running ({running}/{total})"), \
+        hint or (L("Kapalı: ", "Stopped: ") + ", ".join(off[:3]))
 
 
 def _summary(cs):
@@ -606,17 +664,23 @@ def snapshot():
         groups.setdefault(key, []).append(c)
 
     # Compose projelerini hatırla: parçaları silinse bile listede kalsın, tekrar kurulabilsin.
+    # Hangi motorda (bağlamda) görüldüğü de saklanır; uzak sunucuya geçince yerel projeler orada görünmesin.
+    ctx = current_context_name()
+    remote = is_remote_engine()
     learned = {}
     for key, cs in groups.items():
         for c in cs:
             comp = c["compose"]
             if comp and comp["project"] == key and comp["files"]:
-                learned[key] = {"files": comp["files"], "dir": comp["dir"]}
+                learned[key] = {"files": comp["files"], "dir": comp["dir"], **({"context": ctx} if ctx else {})}
                 break
     if any(settings["projeler"].get(k) != v for k, v in learned.items()):
         settings = update_settings(lambda s: s["projeler"].update(learned))
 
     for key, proj in settings["projeler"].items():
+        pctx = proj.get("context")
+        if (pctx and ctx and pctx != ctx) or (not pctx and remote):
+            continue  # başka bir motorda hatırlanan proje
         files = proj.get("files") or []
         if key not in groups and files and all(os.path.isfile(f) for f in files):
             groups[key] = []
@@ -635,7 +699,7 @@ def snapshot():
             source = sources.pop()
 
         if key == SYSTEM_KEY:
-            default_name = "Docker yardımcıları"
+            default_name = L("Docker yardımcıları", "Docker helpers")
         elif key.startswith(SINGLE_PREFIX):
             default_name = key[len(SINGLE_PREFIX):]
         else:
@@ -685,7 +749,7 @@ def get_app(key):
     for app in snapshot()["apps"]:
         if app["key"] == key:
             return app
-    raise UserError("Uygulama bulunamadı. Liste yenilenmiş olabilir.")
+    raise UserError(L("Uygulama bulunamadı. Liste yenilenmiş olabilir.", "App not found. The list may have changed."))
 
 
 def get_container(cid):
@@ -693,7 +757,7 @@ def get_container(cid):
         for c in app["containers"]:
             if cid in (c["id"], c["short_id"], c["name"]):
                 return app, c
-    raise UserError("Parça bulunamadı. Silinmiş olabilir.")
+    raise UserError(L("Parça bulunamadı. Silinmiş olabilir.", "Container not found. It may have been deleted."))
 
 
 # ---------------------------------------------------------------------------
@@ -743,20 +807,20 @@ def start_job(title, app_key, fn, *args):
         for jid in [j.id for j in JOBS.values() if j.finished and now - j.finished > 3600]:
             del JOBS[jid]
         if app_key and any(j.app_key == app_key and j.status == "calisiyor" for j in JOBS.values()):
-            raise UserError("Bu uygulamada zaten bir işlem sürüyor, bitmesini bekle.")
+            raise UserError(L("Bu uygulamada zaten bir işlem sürüyor, bitmesini bekle.", "Something is already running for this app; wait for it to finish."))
         job = Job(title, app_key)
         JOBS[job.id] = job
 
     def runner():
         try:
-            job.message = fn(job, *args) or "Tamamlandı."
+            job.message = fn(job, *args) or L("Tamamlandı.", "Done.")
             job.status = "bitti"
         except UserError as e:
             job.status = "hata"
             job.message = str(e)
         except Exception as e:  # beklenmeyen hatalar da kullanıcıya görünsün
             job.status = "hata"
-            job.message = f"Beklenmeyen hata: {e}"
+            job.message = L(f"Beklenmeyen hata: {e}", f"Unexpected error: {e}")
             job.log(traceback.format_exc())
         finally:
             job.finished = time.time()
@@ -775,14 +839,14 @@ def recent_jobs():
 def get_job(jid):
     job = JOBS.get(jid)
     if not job:
-        raise UserError("İş bulunamadı.")
+        raise UserError(L("İş bulunamadı.", "Task not found."))
     return job.to_dict(full=True)
 
 
 def _stream(job, args, cwd=None, timeout=None):
     """Docker komutunu çalıştırıp çıktısını satır satır işe yazar; çıkış kodunu döndürür."""
     if not DOCKER:
-        raise UserError("Docker bulunamadı.")
+        raise UserError(L("Docker bulunamadı.", "Docker not found."))
     proc = subprocess.Popen(
         [DOCKER, *args],
         stdout=subprocess.PIPE,
@@ -845,17 +909,17 @@ def _start_app(job, app):
     if not cs:
         comp = app.get("compose")
         if comp and comp["exists"]:
-            job.log("Parçalar proje klasöründen yeniden kuruluyor…")
+            job.log(L("Parçalar proje klasöründen yeniden kuruluyor…", "Recreating containers from the project folder…"))
             code = _stream(job, _compose_args(app["key"], comp["files"], comp["dir"]) + ["up", "-d"],
                            cwd=comp["dir"] or None)
             if code != 0:
-                raise UserError("Kurulum başarısız oldu. Ayrıntılara bak.")
-            return "Uygulama kuruldu ve başlatıldı."
-        raise UserError("Bu uygulamanın başlatılacak parçası yok.")
+                raise UserError(L("Kurulum başarısız oldu. Ayrıntılara bak.", "Setup failed. See the details."))
+            return L("Uygulama kuruldu ve başlatıldı.", "App set up and started.")
+        raise UserError(L("Bu uygulamanın başlatılacak parçası yok.", "This app has nothing to start."))
 
     todo = [c for c in cs if not c["running"]]
     if not todo:
-        return "Zaten her şey çalışıyor."
+        return L("Zaten her şey çalışıyor.", "Everything is already running.")
 
     for c in [c for c in todo if c["state"] == "paused"]:
         _stream(job, ["unpause", c["name"]], timeout=60)
@@ -868,37 +932,37 @@ def _start_app(job, app):
         if comp and comp["exists"]:
             groups.setdefault((comp["project"], tuple(comp["files"]), comp["dir"]), []).append(c)
     for (project, files, wd), items in groups.items():
-        job.log(f"Docker Compose ile başlatılıyor ({project})…")
+        job.log(L(f"Docker Compose ile başlatılıyor ({project})…", f"Starting with Docker Compose ({project})…"))
         code = _stream(job, _compose_args(project, files, wd) + ["start"], cwd=wd or None, timeout=600)
         if code == 0:
             done.update(c["id"] for c in items)
         else:
-            job.log("Compose ile olmadı, parçalar tek tek başlatılıyor…")
+            job.log(L("Compose ile olmadı, parçalar tek tek başlatılıyor…", "Compose failed; starting containers one by one…"))
 
     failed = []
     for c in _dependency_order([c for c in todo if c["id"] not in done]):
-        job.log(f"Başlatılıyor: {c['role_title']} ({c['name']})")
+        job.log(L(f"Başlatılıyor: {c['role_title']} ({c['name']})", f"Starting: {c['role_title']} ({c['name']})"))
         if _stream(job, ["start", c["name"]], timeout=180) != 0:
             failed.append(c["name"])
     if failed:
-        raise UserError("Şu parçalar başlatılamadı: " + ", ".join(failed) + ". Kayıtlarına bak.")
-    return "Başlatıldı."
+        raise UserError(L("Şu parçalar başlatılamadı: ", "Could not start: ") + ", ".join(failed) + L(". Kayıtlarına bak.", ". Check their logs."))
+    return L("Başlatıldı.", "Started.")
 
 
 def _stop_app(job, app):
     names = [c["name"] for c in app["containers"] if c["state"] in ("running", "restarting", "paused")]
     if not names:
-        return "Zaten kapalı."
-    job.log("Durduruluyor: " + ", ".join(names))
+        return L("Zaten kapalı.", "Already stopped.")
+    job.log(L("Durduruluyor: ", "Stopping: ") + ", ".join(names))
     if _stream(job, ["stop", *names], timeout=300) != 0:
-        raise UserError("Bazı parçalar durdurulamadı. Ayrıntılara bak.")
-    return "Durduruldu."
+        raise UserError(L("Bazı parçalar durdurulamadı. Ayrıntılara bak.", "Some containers could not be stopped. See the details."))
+    return L("Durduruldu.", "Stopped.")
 
 
 def _restart_app(job, app):
     _stop_app(job, app)
     _start_app(job, get_app(app["key"]))
-    return "Yeniden başlatıldı."
+    return L("Yeniden başlatıldı.", "Restarted.")
 
 
 def _remove_containers(job, containers, with_data):
@@ -906,13 +970,14 @@ def _remove_containers(job, containers, with_data):
     if names:
         args = ["rm", "-f"] + (["-v"] if with_data else []) + names
         if _stream(job, args, timeout=300) != 0:
-            raise UserError("Parçalar silinemedi. Ayrıntılara bak.")
+            raise UserError(L("Parçalar silinemedi. Ayrıntılara bak.", "Containers could not be deleted. See the details."))
     if with_data:
         volumes = sorted({m["name"] for c in containers for m in c["mounts"]
                           if m["type"] == "volume" and not m["anonymous"]})
         for v in volumes:
             code, _, err = docker("volume", "rm", v, timeout=60)
-            job.log(f"Veri kutusu silindi: {v}" if code == 0 else f"Veri kutusu silinemedi ({v}): {err.strip()}")
+            job.log(L(f"Veri kutusu silindi: {v}", f"Volume deleted: {v}") if code == 0
+                    else L(f"Veri kutusu silinemedi ({v}): ", f"Could not delete volume ({v}): ") + err.strip())
 
 
 def _delete_app(job, app, with_data):
@@ -931,54 +996,57 @@ def _delete_app(job, app, with_data):
             del s["eslestirme"][cname]
 
     update_settings(clean)
-    return "Silindi." + (" Veriler de silindi." if with_data else " Veriler (veri kutuları) korundu.")
+    return L("Silindi.", "Deleted.") + (L(" Veriler de silindi.", " Data deleted too.") if with_data
+                                        else L(" Veriler (veri kutuları) korundu.", " Data (volumes) kept."))
 
 
 def _compose_or_fail(app):
     comp = app.get("compose")
     if not comp or not comp.get("exists"):
-        raise UserError("Bu işlem için uygulamanın docker-compose dosyası bilgisayarında bulunmalı.")
+        raise UserError(L("Bu işlem için uygulamanın docker-compose dosyası bilgisayarında bulunmalı.",
+                          "This needs the app's docker-compose file on your computer."))
     return _compose_args(app["key"], comp["files"], comp["dir"]), comp["dir"] or None
 
 
 def _update_app(job, app):
     """Kalıpların yeni sürümlerini indirir, değişen parçaları yeniden oluşturur."""
     args, cwd = _compose_or_fail(app)
-    job.log("Yeni sürümler indiriliyor (kendi kodundan derlenen parçalar atlanır)…")
+    job.log(L("Yeni sürümler indiriliyor (kendi kodundan derlenen parçalar atlanır)…",
+              "Pulling new versions (containers built from your code are skipped)…"))
     if _stream(job, args + ["pull", "--ignore-buildable"], cwd=cwd, timeout=1800) != 0:
-        job.log("Bazı kalıplar indirilemedi; eldekilerle devam ediliyor.")
-    job.log("Değişen parçalar yeniden oluşturuluyor…")
+        job.log(L("Bazı kalıplar indirilemedi; eldekilerle devam ediliyor.", "Some images could not be pulled; continuing with what we have."))
+    job.log(L("Değişen parçalar yeniden oluşturuluyor…", "Recreating changed containers…"))
     if _stream(job, args + ["up", "-d", "--remove-orphans"], cwd=cwd, timeout=1800) != 0:
-        raise UserError("Güncelleme tamamlanamadı. Ayrıntılara bak.")
-    return "Güncellendi. Değişmeyen parçalar olduğu gibi kaldı."
+        raise UserError(L("Güncelleme tamamlanamadı. Ayrıntılara bak.", "The update did not finish. See the details."))
+    return L("Güncellendi. Değişmeyen parçalar olduğu gibi kaldı.", "Updated. Unchanged containers were left as they were.")
 
 
 def _rebuild_app(job, app):
     """Kendi kodunu yeniden derleyip parçaları baştan oluşturur (docker compose up --build)."""
     args, cwd = _compose_or_fail(app)
-    job.log("Kod yeniden derleniyor ve parçalar baştan oluşturuluyor…")
+    job.log(L("Kod yeniden derleniyor ve parçalar baştan oluşturuluyor…", "Rebuilding your code and recreating containers…"))
     if _stream(job, args + ["up", "-d", "--build", "--force-recreate"], cwd=cwd, timeout=3600) != 0:
-        raise UserError("Yeniden kurulum başarısız oldu. Ayrıntılara bak.")
-    return "Yeniden derlendi ve başlatıldı."
+        raise UserError(L("Yeniden kurulum başarısız oldu. Ayrıntılara bak.", "The rebuild failed. See the details."))
+    return L("Yeniden derlendi ve başlatıldı.", "Rebuilt and started.")
 
 
 APP_ACTIONS = {
-    "baslat": ("Başlatılıyor", _start_app),
-    "durdur": ("Durduruluyor", _stop_app),
-    "yeniden": ("Yeniden başlatılıyor", _restart_app),
-    "sil": ("Siliniyor", _delete_app),
-    "guncelle": ("Güncelleniyor", _update_app),
-    "derle": ("Yeniden derleniyor", _rebuild_app),
+    "baslat": (("Başlatılıyor", "Starting"), _start_app),
+    "durdur": (("Durduruluyor", "Stopping"), _stop_app),
+    "yeniden": (("Yeniden başlatılıyor", "Restarting"), _restart_app),
+    "sil": (("Siliniyor", "Deleting"), _delete_app),
+    "guncelle": (("Güncelleniyor", "Updating"), _update_app),
+    "derle": (("Yeniden derleniyor", "Rebuilding"), _rebuild_app),
 }
 
 
 def app_action(key, action, with_data=False):
     if action not in APP_ACTIONS:
-        raise UserError("Bilinmeyen işlem.")
+        raise UserError(L("Bilinmeyen işlem.", "Unknown action."))
     app = get_app(key)
     title, fn = APP_ACTIONS[action]
     args = (app, bool(with_data)) if action == "sil" else (app,)
-    return start_job(f"{app['name']}: {title}", key, fn, *args)
+    return start_job(f"{app['name']}: {L(*title)}", key, fn, *args)
 
 
 def set_app_meta(key, name=None, note=None):
@@ -1026,24 +1094,26 @@ def container_action(cid, action, with_data=False):
         elif action == "sil":
             _remove_containers(job, [c], with_data)
             update_settings(lambda s: s["eslestirme"].pop(name, None))
-            return "Parça silindi."
+            return L("Parça silindi.", "Container deleted.")
         else:
-            raise UserError("Bilinmeyen işlem.")
+            raise UserError(L("Bilinmeyen işlem.", "Unknown action."))
         if code != 0:
-            raise UserError("İşlem başarısız oldu. Kayıtlara bak.")
-        return "Tamam."
+            raise UserError(L("İşlem başarısız oldu. Kayıtlara bak.", "The action failed. Check the logs."))
+        return L("Tamam.", "Done.")
 
-    titles = {"baslat": "başlatılıyor", "durdur": "durduruluyor", "yeniden": "yeniden başlatılıyor", "sil": "siliniyor",
-              "duraklat": "duraklatılıyor", "devam": "devam ettiriliyor", "oldur": "zorla kapatılıyor"}
+    titles = {"baslat": L("başlatılıyor", "starting"), "durdur": L("durduruluyor", "stopping"),
+              "yeniden": L("yeniden başlatılıyor", "restarting"), "sil": L("siliniyor", "deleting"),
+              "duraklat": L("duraklatılıyor", "pausing"), "devam": L("devam ettiriliyor", "resuming"),
+              "oldur": L("zorla kapatılıyor", "killing")}
     if action not in titles:
-        raise UserError("Bilinmeyen işlem.")
+        raise UserError(L("Bilinmeyen işlem.", "Unknown action."))
     return start_job(f"{c['role_title']} ({name}) {titles[action]}", app["key"], run)
 
 
 def bulk_container_action(ids, action, with_data=False):
     """Seçilen birçok parçaya aynı işlemi tek bir iş içinde sırayla uygular."""
     if action not in ("baslat", "durdur", "yeniden", "sil"):
-        raise UserError("Bilinmeyen işlem.")
+        raise UserError(L("Bilinmeyen işlem.", "Unknown action."))
     ids = [i for i in (ids or []) if isinstance(i, str)][:200]
     targets = []
     for cid in ids:
@@ -1052,7 +1122,7 @@ def bulk_container_action(ids, action, with_data=False):
         except UserError:
             pass
     if not targets:
-        raise UserError("Seçilen parçalar bulunamadı.")
+        raise UserError(L("Seçilen parçalar bulunamadı.", "The selected containers were not found."))
     verb = {"baslat": "start", "durdur": "stop", "yeniden": "restart"}.get(action)
 
     def run(job):
@@ -1060,7 +1130,7 @@ def bulk_container_action(ids, action, with_data=False):
         if action == "sil":
             _remove_containers(job, targets, with_data)
             update_settings(lambda s: [s["eslestirme"].pop(c["name"], None) for c in targets])
-            return f"{len(targets)} parça silindi."
+            return L(f"{len(targets)} parça silindi.", f"{len(targets)} container(s) deleted.")
         if action == "baslat":
             todo = [c for c in targets if not c["up"] or c["state"] == "paused"]
         else:
@@ -1074,22 +1144,25 @@ def bulk_container_action(ids, action, with_data=False):
             if _stream(job, [cmd, c["name"]], timeout=240) != 0:
                 failed.append(c["name"])
         if failed:
-            raise UserError("Şunlarda sorun çıktı: " + ", ".join(failed))
-        return f"{len(todo)} parça için tamamlandı."
+            raise UserError(L("Şunlarda sorun çıktı: ", "Problems with: ") + ", ".join(failed))
+        return L(f"{len(todo)} parça için tamamlandı.", f"Done for {len(todo)} container(s).")
 
-    titles = {"baslat": "başlatılıyor", "durdur": "durduruluyor", "yeniden": "yeniden başlatılıyor", "sil": "siliniyor"}
-    return start_job(f"{len(targets)} parça {titles[action]}", None, run)
+    titles = {"baslat": ("başlatılıyor", "starting"), "durdur": ("durduruluyor", "stopping"),
+              "yeniden": ("yeniden başlatılıyor", "restarting"), "sil": ("siliniyor", "deleting")}
+    return start_job(L(f"{len(targets)} parça {titles[action][0]}", f"{titles[action][1].capitalize()} {len(targets)} container(s)"),
+                     None, run)
 
 
 def move_container(cid, target_key, target_name=""):
     _, c = get_container(cid)
     if c["source"] not in ("single", "manual"):
-        raise UserError("Bu parça zaten bir projeye bağlı; yalnızca tek başına duran parçalar taşınabilir.")
+        raise UserError(L("Bu parça zaten bir projeye bağlı; yalnızca tek başına duran parçalar taşınabilir.",
+                          "This container belongs to a project; only standalone containers can be moved."))
     target_key = (target_key or "").strip()
     if target_key == "__yeni__":
         target_key = slugify(target_name)
         if not target_key:
-            raise UserError("Yeni uygulama için bir ad yaz.")
+            raise UserError(L("Yeni uygulama için bir ad yaz.", "Enter a name for the new app."))
 
     def apply(s):
         if target_key:
@@ -1112,7 +1185,7 @@ def logs(cid, tail=400):
         )
         return strip_ansi(p.stdout)
     except subprocess.TimeoutExpired:
-        raise UserError("Kayıtlar zamanında okunamadı.")
+        raise UserError(L("Kayıtlar zamanında okunamadı.", "Could not read the logs in time."))
 
 
 # ---------------------------------------------------------------------------
@@ -1121,22 +1194,26 @@ def logs(cid, tail=400):
 
 SECRET_KEY_RE = re.compile(r"PASS|SECRET|TOKEN|KEY|PWD|CREDENTIAL|PRIVATE|AUTH", re.I)
 
-RESTART_POLICIES = {
-    "no": "Hiçbir zaman (elle başlatırsın)",
-    "on-failure": "Sadece hata verip kapanırsa",
-    "unless-stopped": "Her zaman (sen durdurmadıysan)",
-    "always": "Her zaman",
+_RESTART_POLICIES = {
+    "no": ("Hiçbir zaman (elle başlatırsın)", "Never (you start it yourself)"),
+    "on-failure": ("Sadece hata verip kapanırsa", "Only if it exits with an error"),
+    "unless-stopped": ("Her zaman (sen durdurmadıysan)", "Always (unless you stopped it)"),
+    "always": ("Her zaman", "Always"),
 }
+
+
+def restart_policies():
+    return {k: L(*v) for k, v in _RESTART_POLICIES.items()}
 
 
 def inspect_container(name):
     code, out, err = docker("inspect", name, timeout=20)
     if code != 0:
-        raise UserError("Parça okunamadı: " + err.strip()[-200:])
+        raise UserError(L("Parça okunamadı: ", "Could not read the container: ") + err.strip()[-200:])
     try:
         return json.loads(out)[0]
     except (ValueError, IndexError):
-        raise UserError("Parça bilgisi anlaşılamadı.")
+        raise UserError(L("Parça bilgisi anlaşılamadı.", "Could not parse the container info."))
 
 
 def container_detail(cid):
@@ -1177,7 +1254,7 @@ def container_detail(cid):
         "hostname": cfg.get("Hostname", ""),
         "networks": nets,
         "restart": {"policy": (host.get("RestartPolicy") or {}).get("Name") or "no",
-                    "options": RESTART_POLICIES},
+                    "options": restart_policies()},
         "memory_limit": host.get("Memory") or 0,
         "cpu_limit": (host.get("NanoCpus") or 0) / 1e9,
         "health": {
@@ -1195,11 +1272,11 @@ def exec_command(cid, command, timeout=30):
     _, c = get_container(cid)
     command = (command or "").strip()
     if not command:
-        raise UserError("Bir komut yaz.")
+        raise UserError(L("Bir komut yaz.", "Type a command."))
     if len(command) > 2000:
-        raise UserError("Komut çok uzun.")
+        raise UserError(L("Komut çok uzun.", "The command is too long."))
     if not c["running"]:
-        raise UserError("Parça kapalıyken içinde komut çalıştırılamaz. Önce başlat.")
+        raise UserError(L("Parça kapalıyken içinde komut çalıştırılamaz. Önce başlat.", "Commands can't run while the container is stopped. Start it first."))
     started = time.time()
     try:
         p = subprocess.run(
@@ -1213,19 +1290,20 @@ def exec_command(cid, command, timeout=30):
                 "seconds": round(time.time() - started, 1)}
     out = strip_ansi(p.stdout or "")
     if p.returncode == 126 or (p.returncode == 127 and "sh" in out and "not found" in out and len(out) < 300):
-        out += "\n(Bu parçanın içinde komut satırı (sh) yok. Bazı küçük kalıplarda komut çalıştırılamaz.)"
+        out += L("\n(Bu parçanın içinde komut satırı (sh) yok. Bazı küçük kalıplarda komut çalıştırılamaz.)",
+                 "\n(This container has no shell (sh). Some minimal images can't run commands.)")
     return {"output": out[-60000:], "code": p.returncode, "timeout": False,
             "seconds": round(time.time() - started, 1)}
 
 
 def set_restart_policy(cid, policy):
-    if policy not in RESTART_POLICIES:
-        raise UserError("Geçersiz seçim.")
+    if policy not in _RESTART_POLICIES:
+        raise UserError(L("Geçersiz seçim.", "Invalid choice."))
     _, c = get_container(cid)
     code, _, err = docker("update", "--restart", policy, c["name"], timeout=30)
     if code != 0:
-        raise UserError("Değiştirilemedi: " + err.strip()[-200:])
-    return RESTART_POLICIES[policy]
+        raise UserError(L("Değiştirilemedi: ", "Could not change it: ") + err.strip()[-200:])
+    return restart_policies()[policy]
 
 
 _TS_RE = re.compile(r"^(\d{4}-\d\d-\d\dT[\d:.]+Z?)\s?")
@@ -1267,7 +1345,7 @@ def logs_ex(cid, tail=500, timestamps=False, since=""):
         p = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                            text=True, encoding="utf-8", errors="replace", timeout=25, env=ENV)
     except subprocess.TimeoutExpired:
-        raise UserError("Kayıtlar zamanında okunamadı.")
+        raise UserError(L("Kayıtlar zamanında okunamadı.", "Could not read the logs in time."))
     return strip_ansi(p.stdout)
 
 
@@ -1279,8 +1357,9 @@ def app_env(key):
         if c["connection"]:
             blocks.append(f"# {c['role_title']} ({c['name']})\n{c['connection']['text']}")
     if not blocks:
-        raise UserError("Bu uygulamada bağlantı bilgisi üretilebilen bir parça (veritabanı, Redis…) yok.")
-    return f"# {app['name']} — Basic Docker tarafından üretildi\n\n" + "\n\n".join(blocks) + "\n"
+        raise UserError(L("Bu uygulamada bağlantı bilgisi üretilebilen bir parça (veritabanı, Redis…) yok.",
+                          "This app has no container we can build connection details for (database, Redis…)."))
+    return L(f"# {app['name']} — Basic Docker tarafından üretildi\n\n", f"# {app['name']} — generated by Basic Docker\n\n") + "\n\n".join(blocks) + "\n"
 
 
 def compose_files(key):
@@ -1292,9 +1371,9 @@ def compose_files(key):
             with open(f, encoding="utf-8", errors="replace") as fh:
                 out.append({"path": f, "text": fh.read(200_000)})
         except OSError as e:
-            out.append({"path": f, "text": f"(Okunamadı: {e})"})
+            out.append({"path": f, "text": L(f"(Okunamadı: {e})", f"(Could not read: {e})")})
     if not out:
-        raise UserError("Bu uygulamanın compose dosyası bilinmiyor.")
+        raise UserError(L("Bu uygulamanın compose dosyası bilinmiyor.", "This app's compose file is unknown."))
     return out
 
 
@@ -1311,10 +1390,10 @@ def list_sets():
 def save_set(set_id, name, apps):
     name = (name or "").strip()[:60]
     if not name:
-        raise UserError("Sete bir ad ver (ör. İş, Kişisel projeler).")
+        raise UserError(L("Sete bir ad ver (ör. İş, Kişisel projeler).", "Give the set a name (e.g. Work, Side projects)."))
     apps = [str(a) for a in (apps or []) if isinstance(a, str)][:50]
     if not apps:
-        raise UserError("Sete en az bir uygulama ekle.")
+        raise UserError(L("Sete en az bir uygulama ekle.", "Add at least one app to the set."))
     if not set_id:
         base = slugify(name) or uuid.uuid4().hex[:6]
         existing = load_settings()["setler"]
@@ -1338,9 +1417,9 @@ def run_set(set_id, action):
     sets = {s["id"]: s for s in list_sets()}
     st = sets.get(set_id)
     if not st:
-        raise UserError("Set bulunamadı.")
+        raise UserError(L("Set bulunamadı.", "Set not found."))
     if action not in ("baslat", "durdur"):
-        raise UserError("Bilinmeyen işlem.")
+        raise UserError(L("Bilinmeyen işlem.", "Unknown action."))
 
     def run(job):
         known = {a["key"]: a for a in snapshot()["apps"]}
@@ -1350,19 +1429,21 @@ def run_set(set_id, action):
             if key not in known:
                 continue
             app = get_app(key)
-            job.log(f"{app['name']}: {'başlatılıyor' if action == 'baslat' else 'durduruluyor'}…")
+            job.log(f"{app['name']}: {L('başlatılıyor', 'starting') if action == 'baslat' else L('durduruluyor', 'stopping')}…")
             try:
                 (_start_app if action == "baslat" else _stop_app)(job, app)
             except UserError as e:
                 failed.append(app["name"])
                 job.log(f"{app['name']}: {e}")
         if missing:
-            job.log("Artık olmayan uygulamalar atlandı: " + ", ".join(missing))
+            job.log(L("Artık olmayan uygulamalar atlandı: ", "Skipped apps that no longer exist: ") + ", ".join(missing))
         if failed:
-            raise UserError("Şunlarda sorun çıktı: " + ", ".join(failed))
-        return f"“{st['name']}” seti {'başlatıldı' if action == 'baslat' else 'durduruldu'}."
+            raise UserError(L("Şunlarda sorun çıktı: ", "Problems with: ") + ", ".join(failed))
+        return L(f"“{st['name']}” seti {'başlatıldı' if action == 'baslat' else 'durduruldu'}.",
+                 f"Set “{st['name']}” {'started' if action == 'baslat' else 'stopped'}.")
 
-    return start_job(f"{st['name']} seti: {'başlatılıyor' if action == 'baslat' else 'durduruluyor'}", None, run)
+    return start_job(L(f"{st['name']} seti: {'başlatılıyor' if action == 'baslat' else 'durduruluyor'}",
+                       f"{st['name']} set: {'starting' if action == 'baslat' else 'stopping'}"), None, run)
 
 
 # ---------------------------------------------------------------------------
@@ -1395,13 +1476,25 @@ def _port_free(port):
     return True
 
 
+def is_remote_engine():
+    """Uzak bir motora mı bağlıyız? remote.py yüklenince gerçek denetimle değiştirilir."""
+    return False
+
+
+def current_context_name():
+    """Kullanılan Docker bağlamının adı. remote.py yüklenince önbellekli sürümle değiştirilir."""
+    return ""
+
+
 def pick_port(preferred, taken):
+    # Uzak motorda bu Mac'teki kapıların boş olup olmadığı önemsiz; sadece Docker'daki kapılara bakılır.
+    local_check = not is_remote_engine()
     port = preferred
     while port < 65000:
-        if port not in taken and _port_free(port):
+        if port not in taken and (not local_check or _port_free(port)):
             return port
         port += 1
-    raise UserError("Boş kapı bulunamadı.")
+    raise UserError(L("Boş kapı bulunamadı.", "No free port found."))
 
 
 def _unique_name(base, existing):
@@ -1416,11 +1509,11 @@ def _resolve_target(app_key, new_name):
     """Seçilen uygulamayı ya da yeni uygulama adını anahtara çevirir."""
     if app_key and app_key != "__yeni__":
         if app_key.startswith(SINGLE_PREFIX) or app_key == SYSTEM_KEY or not NAME_RE.match(app_key):
-            raise UserError("Bu uygulamaya parça eklenemez.")
+            raise UserError(L("Bu uygulamaya parça eklenemez.", "Containers can't be added to this app."))
         return app_key, None
     key = slugify(new_name)
     if not key:
-        raise UserError("Yeni uygulama için bir ad yaz (ör. Blog Sitem).")
+        raise UserError(L("Yeni uygulama için bir ad yaz (ör. Blog Sitem).", "Enter a name for the new app (e.g. My Blog)."))
     return key, new_name.strip()[:80]
 
 
@@ -1428,9 +1521,10 @@ def _prepare(job, key, image):
     """İmajı indirir (yoksa) ve uygulamanın ağını hazırlar; (ağ, mevcut_adlar, dolu_kapılar) döndürür."""
     code, _, _ = docker("image", "inspect", image, timeout=20)
     if code != 0:
-        job.log(f"{image} indiriliyor (ilk seferde biraz sürebilir)…")
+        job.log(L(f"{image} indiriliyor (ilk seferde biraz sürebilir)…", f"Pulling {image} (may take a while the first time)…"))
         if _stream(job, ["pull", image]) != 0:
-            raise UserError(f"{image} indirilemedi. İnternet bağlantını ve imaj adını kontrol et.")
+            raise UserError(L(f"{image} indirilemedi. İnternet bağlantını ve imaj adını kontrol et.",
+                                  f"Could not pull {image}. Check your internet connection and the image name."))
 
     snap = snapshot()
     existing = {c["name"] for a in snap["apps"] for c in a["containers"]}
@@ -1450,7 +1544,7 @@ def _prepare(job, key, image):
         if code != 0:
             code, _, err = docker("network", "create", "--label", f"basicdocker.app={key}", network)
             if code != 0:
-                raise UserError("Uygulama ağı oluşturulamadı: " + err.strip())
+                raise UserError(L("Uygulama ağı oluşturulamadı: ", "Could not create the app network: ") + err.strip())
     return network, existing, set(snap["taken_ports"])
 
 
@@ -1462,7 +1556,7 @@ def _remember_name(key, display):
 def create_from_template(template_id, app_key, new_name):
     t = catalog.BY_ID.get(template_id)
     if not t:
-        raise UserError("Böyle bir hazır parça yok.")
+        raise UserError(L("Böyle bir hazır parça yok.", "No such template."))
     key, display = _resolve_target(app_key, new_name)
 
     def run(job):
@@ -1478,7 +1572,7 @@ def create_from_template(template_id, app_key, new_name):
         for p in t["ports"]:
             host = pick_port(p.get("host", p["container"]), taken)
             taken.add(host)
-            chosen.append(f"{p['label']}: localhost:{host}")
+            chosen.append(f"{catalog.port_label(p)}: localhost:{host}")
             args += ["-p", f"127.0.0.1:{host}:{p['container']}"]
         if t.get("data"):
             args += ["-v", f"{name}-veri:{t['data']}"]
@@ -1487,20 +1581,21 @@ def create_from_template(template_id, app_key, new_name):
         args.append(t["image"])
         args += t.get("cmd", [])
         _remember_name(key, display)
-        job.log(f"Parça oluşturuluyor: {name}")
+        job.log(L(f"Parça oluşturuluyor: {name}", f"Creating container: {name}"))
         if _stream(job, args, timeout=300) != 0:
-            raise UserError("Parça oluşturulamadı. Ayrıntılara bak.")
+            raise UserError(L("Parça oluşturulamadı. Ayrıntılara bak.", "Could not create the container. See the details."))
         for line in chosen:
             job.log(line)
-        return f"{t['title']} kuruldu ve çalışıyor. Bağlantı bilgisi uygulamanın ayrıntılarında."
+        return L(f"{t['title']} kuruldu ve çalışıyor. Bağlantı bilgisi uygulamanın ayrıntılarında.",
+                 f"{t['title']} is installed and running. Connection details are on the app page.")
 
-    return start_job(f"{t['title']} kuruluyor", key, run)
+    return start_job(L(f"{t['title']} kuruluyor", f"Installing {t['title']}"), key, run)
 
 
 def create_custom(image, role, app_key, new_name, container_port, host_port, env_text, data_path):
     image = (image or "").strip()
     if not IMAGE_RE.match(image):
-        raise UserError("İmaj adı geçersiz. Örnek: nginx:alpine")
+        raise UserError(L("İmaj adı geçersiz. Örnek: nginx:alpine", "Invalid image name. Example: nginx:alpine"))
     key, display = _resolve_target(app_key, new_name)
     role = slugify(role) or slugify(image_base(image)) or "parca"
 
@@ -1510,13 +1605,13 @@ def create_custom(image, role, app_key, new_name, container_port, host_port, env
         try:
             v = int(value)
         except (TypeError, ValueError):
-            raise UserError(f"{label} bir sayı olmalı.")
+            raise UserError(L(f"{label} bir sayı olmalı.", f"{label} must be a number."))
         if not 1 <= v <= 65535:
-            raise UserError(f"{label} 1 ile 65535 arasında olmalı.")
+            raise UserError(L(f"{label} 1 ile 65535 arasında olmalı.", f"{label} must be between 1 and 65535."))
         return v
 
-    cport = to_port(container_port, "İç kapı")
-    hport = to_port(host_port, "Dış kapı")
+    cport = to_port(container_port, L("İç kapı", "Container port"))
+    hport = to_port(host_port, L("Dış kapı", "Host port"))
     envs = []
     for line in (env_text or "").splitlines():
         line = line.strip()
@@ -1524,11 +1619,11 @@ def create_custom(image, role, app_key, new_name, container_port, host_port, env
             continue
         k, sep, v = line.partition("=")
         if not sep or not ENV_KEY_RE.match(k.strip()):
-            raise UserError(f"Ayar satırı anlaşılamadı: '{line}'. Biçim: AD=değer")
+            raise UserError(L(f"Ayar satırı anlaşılamadı: '{line}'. Biçim: AD=değer", f"Could not read setting line '{line}'. Format: NAME=value"))
         envs.append(f"{k.strip()}={v}")
     data_path = (data_path or "").strip()
     if data_path and not data_path.startswith("/"):
-        raise UserError("Veri klasörü / ile başlamalı (ör. /data).")
+        raise UserError(L("Veri klasörü / ile başlamalı (ör. /data).", "The data folder must start with / (e.g. /data)."))
 
     def run(job):
         network, existing, taken = _prepare(job, key, image)
@@ -1539,21 +1634,22 @@ def create_custom(image, role, app_key, new_name, container_port, host_port, env
         if cport:
             host = hport or pick_port(cport if cport >= 1024 else 8080, taken)
             if hport and (hport in taken or not _port_free(hport)):
-                raise UserError(f"{hport} numaralı kapı dolu. Başka bir sayı dene ya da boş bırak.")
+                raise UserError(L(f"{hport} numaralı kapı dolu. Başka bir sayı dene ya da boş bırak.",
+                                  f"Port {hport} is taken. Try another number or leave it empty."))
             args += ["-p", f"127.0.0.1:{host}:{cport}"]
-            job.log(f"Kapı: localhost:{host} → içeride {cport}")
+            job.log(L(f"Kapı: localhost:{host} → içeride {cport}", f"Port: localhost:{host} → {cport} inside"))
         if data_path:
             args += ["-v", f"{name}-veri:{data_path}"]
         for e in envs:
             args += ["-e", e]
         args.append(image)
         _remember_name(key, display)
-        job.log(f"Parça oluşturuluyor: {name}")
+        job.log(L(f"Parça oluşturuluyor: {name}", f"Creating container: {name}"))
         if _stream(job, args, timeout=300) != 0:
-            raise UserError("Parça oluşturulamadı. Ayrıntılara bak.")
-        return f"{name} oluşturuldu."
+            raise UserError(L("Parça oluşturulamadı. Ayrıntılara bak.", "Could not create the container. See the details."))
+        return L(f"{name} oluşturuldu.", f"{name} created.")
 
-    return start_job(f"{image} kuruluyor", key, run)
+    return start_job(L(f"{image} kuruluyor", f"Setting up {image}"), key, run)
 
 
 COMPOSE_NAMES = ["compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"]
@@ -1567,8 +1663,8 @@ def _compose_target(path):
         for n in COMPOSE_NAMES:
             if os.path.isfile(os.path.join(path, n)):
                 return path, None  # standart ad: compose kendisi bulsun (override dosyası dahil)
-        raise UserError("Bu klasörde docker-compose.yml (veya compose.yaml) yok.")
-    raise UserError("Klasör bulunamadı.")
+        raise UserError(L("Bu klasörde docker-compose.yml (veya compose.yaml) yok.", "There is no docker-compose.yml (or compose.yaml) in this folder."))
+    raise UserError(L("Klasör bulunamadı.", "Folder not found."))
 
 
 def compose_info(path):
@@ -1576,11 +1672,11 @@ def compose_info(path):
     args = ["compose"] + (["-f", f] if f else []) + ["config", "--format", "json"]
     code, out, err = docker(*args, cwd=d, timeout=60)
     if code != 0:
-        raise UserError("docker-compose dosyası okunamadı:\n" + strip_ansi(err).strip()[-800:])
+        raise UserError(L("docker-compose dosyası okunamadı:\n", "Could not read the docker-compose file:\n") + strip_ansi(err).strip()[-800:])
     try:
         cfg = json.loads(out)
     except ValueError:
-        raise UserError("docker-compose dosyası anlaşılamadı.")
+        raise UserError(L("docker-compose dosyası anlaşılamadı.", "Could not parse the docker-compose file."))
     services = []
     for sname, s in (cfg.get("services") or {}).items():
         role = describe_role(sname, s.get("image", ""))
@@ -1613,14 +1709,14 @@ def create_from_compose(path, project_name, display_name):
 
     def run(job):
         args = ["compose"] + (["-p", project] if project else []) + (["-f", f] if f else []) + ["up", "-d"]
-        job.log("Kuruluyor… (kendi kodun derlenecekse birkaç dakika sürebilir)")
+        job.log(L("Kuruluyor… (kendi kodun derlenecekse birkaç dakika sürebilir)", "Setting up… (may take a few minutes if your code needs to be built)"))
         if _stream(job, args, cwd=d) != 0:
-            raise UserError("Kurulum başarısız oldu. Ayrıntılardaki son satırlara bak.")
+            raise UserError(L("Kurulum başarısız oldu. Ayrıntılardaki son satırlara bak.", "Setup failed. See the last lines in the details."))
         if display_name and display_name.strip():
             set_app_meta(final, name=display_name)
-        return "Proje kuruldu ve başlatıldı."
+        return L("Proje kuruldu ve başlatıldı.", "Project set up and started.")
 
-    return start_job(f"{display_name or pretty_name(final)} kuruluyor", final, run)
+    return start_job(L(f"{display_name or pretty_name(final)} kuruluyor", f"Setting up {display_name or pretty_name(final)}"), final, run)
 
 
 # ---------------------------------------------------------------------------
@@ -1631,7 +1727,7 @@ def open_folder(key):
     app = get_app(key)
     folder = (app.get("compose") or {}).get("dir")
     if not folder or not os.path.isdir(folder):
-        raise UserError("Bu uygulamanın proje klasörü bilinmiyor.")
+        raise UserError(L("Bu uygulamanın proje klasörü bilinmiyor.", "This app's project folder is unknown."))
     if IS_MAC:
         subprocess.Popen(["open", folder])
     elif sys.platform.startswith("win"):
@@ -1642,9 +1738,10 @@ def open_folder(key):
 
 def open_terminal(name):
     if not IS_MAC:
-        raise UserError(f"Terminal açma yalnızca macOS'ta var. Kendin çalıştır: docker exec -it {name} sh")
+        raise UserError(L(f"Terminal açma yalnızca macOS'ta var. Kendin çalıştır: docker exec -it {name} sh",
+                          f"Opening a terminal only works on macOS. Run it yourself: docker exec -it {name} sh"))
     if not NAME_RE.match(name):
-        raise UserError("Geçersiz parça adı.")
+        raise UserError(L("Geçersiz parça adı.", "Invalid container name."))
     command = f"'{DOCKER}' exec -it {name} sh"
     subprocess.Popen([
         "osascript",
@@ -1662,6 +1759,9 @@ def engine_kind():
         if code == 0:
             endpoint = out.strip()
     endpoint = os.environ.get("DOCKER_HOST") or endpoint
+    if endpoint.startswith("ssh://") or (endpoint.startswith("tcp://")
+                                         and not re.match(r"tcp://(localhost|127\.0\.0\.1|\[::1\])(:|$)", endpoint)):
+        return "remote"
     if ".orbstack" in endpoint:
         return "orbstack"
     if "colima" in endpoint:
@@ -1678,7 +1778,7 @@ def engine_kind():
     return "diger"
 
 
-ENGINE_NAMES = {"orbstack": "OrbStack", "docker-desktop": "Docker Desktop", "colima": "Colima", "diger": "Docker"}
+ENGINE_NAMES = {"orbstack": "OrbStack", "docker-desktop": "Docker Desktop", "colima": "Colima", "remote": "Docker", "diger": "Docker"}
 
 
 def start_docker_desktop():
@@ -1687,13 +1787,15 @@ def start_docker_desktop():
         kind = engine_kind()
         if kind == "colima":
             subprocess.Popen(["colima", "start"], env=ENV)
-            return "Colima başlatılıyor… Bu 20-30 saniye sürebilir."
+            return L("Colima başlatılıyor… Bu 20-30 saniye sürebilir.", "Starting Colima… This can take 20-30 seconds.")
         app = "OrbStack" if kind == "orbstack" else "Docker"
         subprocess.Popen(["open", "-a", app])
-        return f"{ENGINE_NAMES.get(kind if kind != 'diger' else 'docker-desktop')} açılıyor… Bu 10-30 saniye sürebilir."
+        name = ENGINE_NAMES.get(kind if kind != 'diger' else 'docker-desktop')
+        return L(f"{name} açılıyor… Bu 10-30 saniye sürebilir.", f"Opening {name}… This can take 10-30 seconds.")
     if sys.platform.startswith("win"):
         path = os.path.expandvars(r"%ProgramFiles%\Docker\Docker\Docker Desktop.exe")
         if os.path.exists(path):
             subprocess.Popen([path])
-            return "Docker açılıyor… Bu 20-30 saniye sürebilir."
-    raise UserError("Docker'ı kendin başlatman gerekiyor (Linux: sudo systemctl start docker).")
+            return L("Docker açılıyor… Bu 20-30 saniye sürebilir.", "Opening Docker… This can take 20-30 seconds.")
+    raise UserError(L("Docker'ı kendin başlatman gerekiyor (Linux: sudo systemctl start docker).",
+                      "You need to start Docker yourself (Linux: sudo systemctl start docker)."))
