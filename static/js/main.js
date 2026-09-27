@@ -190,6 +190,7 @@ function renderEngineState() {
 // ---------- Yenileme ----------------------------------------------------------------
 let _pollTimer = null;
 let _booted = false;
+let _prefsLoaded = false;
 async function refresh() {
   clearTimeout(_pollTimer);
   const wasDown = !S.data?.docker?.ok;
@@ -197,10 +198,14 @@ async function refresh() {
     const data = await api("/api/durum");
     S.data = data;
     S.offline = false;
-    if (!_booted) {
+    // Tercihler ilk başarılı cevapla yüklenir. Pencere açılırken köprü henüz hazır değilse ilk çağrı boşa gider;
+    // o durumda sayfa varsayılanlarla çizilmiş olur, tercihler gelince (dil, tema) yeniden çizilir.
+    if (!_prefsLoaded) {
+      _prefsLoaded = true;
       S.prefs = { ...(data.ui || {}) };
       applyTheme();
       applyLanguage();
+      if (_booted) { Router.current?.view.unmount?.(); Router.current = null; Router.render(); }
     }
     mergeJobs(data.jobs || []);
   } catch {
@@ -213,7 +218,7 @@ async function refresh() {
   if (!_booted) { _booted = true; Router.render(); refreshBadges(); }
   else if (wasDown && S.data?.docker?.ok) { Router.current?.view.unmount?.(); Router.current = null; Router.render(); }
   const busy = [...S.jobs.values()].some((j) => j.status === "calisiyor");
-  _pollTimer = setTimeout(refresh, document.hidden ? 12000 : busy ? 1000 : 3000);
+  _pollTimer = setTimeout(refresh, !_prefsLoaded ? 400 : document.hidden ? 12000 : busy ? 1000 : 3000);
 }
 
 async function refreshBadges() {
