@@ -28,15 +28,31 @@ import catalog
 # Docker komutunu bulma ve çalıştırma
 # ---------------------------------------------------------------------------
 
-EXTRA_PATHS = [
-    "/usr/local/bin",
-    "/opt/homebrew/bin",
-    "/Applications/Docker.app/Contents/Resources/bin",
-    os.path.expanduser("~/.orbstack/bin"),
-    os.path.expanduser("~/.docker/bin"),
-    "/usr/bin",
-    "/bin",
-]
+IS_WIN = sys.platform.startswith("win")
+
+if IS_WIN:
+    EXTRA_PATHS = [
+        os.path.expandvars(r"%ProgramFiles%\Docker\Docker\resources\bin"),
+        os.path.expanduser(r"~\.docker\bin"),
+        os.path.expandvars(r"%SystemRoot%\System32\OpenSSH"),
+    ]
+    # Pencereli uygulamada her docker komutu bir an siyah konsol penceresi açmasın.
+    class _NoWindowPopen(subprocess.Popen):
+        def __init__(self, *args, **kwargs):
+            kwargs.setdefault("creationflags", subprocess.CREATE_NO_WINDOW)
+            super().__init__(*args, **kwargs)
+
+    subprocess.Popen = _NoWindowPopen
+else:
+    EXTRA_PATHS = [
+        "/usr/local/bin",
+        "/opt/homebrew/bin",
+        "/Applications/Docker.app/Contents/Resources/bin",
+        os.path.expanduser("~/.orbstack/bin"),
+        os.path.expanduser("~/.docker/bin"),
+        "/usr/bin",
+        "/bin",
+    ]
 
 
 def _build_env():

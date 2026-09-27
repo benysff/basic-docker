@@ -410,5 +410,7 @@ def reveal(path=None):
     os.makedirs(backup_root(), exist_ok=True)
     if ds.IS_MAC:
         subprocess.Popen(["open", "-R", target] if os.path.isfile(target) else ["open", target])
+    elif ds.IS_WIN:
+        subprocess.Popen(["explorer", f"/select,{target}"] if os.path.isfile(target) else ["explorer", target])
     else:
         subprocess.Popen(["xdg-open", os.path.dirname(target) if os.path.isfile(target) else target])

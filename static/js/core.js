@@ -77,6 +77,8 @@ const q = (params) => "?" + Object.entries(params)
 const isEN = () => S.prefs.lang === "en";
 const L = (tr, en) => (isEN() ? en : tr);
 const loc = () => (isEN() ? "en-US" : "tr-TR");
+/** Kısayol yazıları: macOS dışında (Windows, Linux) ⌘ yerine Ctrl. */
+const modText = (s) => (S.data?.platform && !S.data.platform.mac ? String(s).replace(/⌘\+?/g, "Ctrl+") : s);
 
 // ---------- Biçimlendirme -----------------------------------------------------
 const fmt = {

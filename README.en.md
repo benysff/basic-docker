@@ -2,7 +2,7 @@
 
 [Türkçe](README.md) · **English**
 
-**A native Mac app that manages Docker in plain language.**
+**A desktop app that manages Docker in plain language.** Built natively for the Mac; the Windows version is experimental.
 A project with 5 containers shows up as a single card. One click starts them all, one click stops them all.
 And when something breaks, it **tells you why in plain words.**
 
@@ -64,6 +64,21 @@ The interface is available in **English and Turkish**; switch in System settings
 
 ## Installation
 
+### Download (easiest)
+
+Get the file for your computer from the [Releases](https://github.com/benysff/basic-docker/releases/latest) page:
+
+| Computer | File |
+|---|---|
+| Mac (M1/M2/M3/M4…) | `Basic-Docker-macOS-AppleSilicon.zip` |
+| Mac (Intel) | `Basic-Docker-macOS-Intel.zip` |
+| Windows 10/11 (experimental) | `Basic-Docker-Windows.zip` |
+
+No Python needed; everything is in the package. The app isn't signed, so the Mac warns on first launch:
+System Settings → Privacy & Security → **Open Anyway**. On Windows, if SmartScreen warns, choose **More info → Run anyway**.
+
+### Install from source (Mac)
+
 Requirements: **macOS 11+**, **Python 3.9+** (comes with macOS) and a Docker engine:
 **[OrbStack](https://orbstack.dev)** (the lightest on a Mac) or **[Docker Desktop](https://www.docker.com/products/docker-desktop/)**.
 
@@ -109,7 +124,7 @@ goes online when you ask it to (pulling images, checking for updates).
 
 ## How does it work?
 
-Basic Docker is a Python app. It shows its interface in a native macOS window (WKWebView) using
+Basic Docker is a Python app. It shows its interface in a native macOS window (WKWebView; WebView2 on Windows) using
 [pywebview](https://pywebview.flowrl.com/). There is no web server or port: the interface calls Python functions directly.
 It talks to Docker only through the `docker` command line tool.
 
@@ -132,7 +147,8 @@ Containers are grouped in this order:
 | `monitor.py` | Live resource usage and activity history in the background (crash notifications) |
 | `catalog.py` | Ready-made container list |
 | `static/` | Interface: `css/` (design tokens, components), `js/` (each page is its own file under `views/`) and `vendor/xterm/` (xterm.js 6, MIT, bundled so it works offline) |
-| `kur.command`, `setup.py` | Installation and the `.app` bundle |
+| `kur.command`, `setup.py` | Install from source and the `.app` bundle (Mac) |
+| `basic-docker.spec`, `.github/workflows/surum.yml` | Downloadable packages (PyInstaller): builds for Mac and Windows and attaches them to the Release on a version tag |
 
 Settings (display names, notes, manual groups, sets, preferences) live in `~/.basic-docker/ayarlar.json`,
 the activity history in `~/.basic-docker/etkinlik.jsonl`.
@@ -149,6 +165,9 @@ the activity history in `~/.basic-docker/etkinlik.jsonl`.
 - Every `css/` and `js/` file referenced in `index.html` is inlined into one page at startup; there is no build step.
 - Interface texts are written in both languages: `L("Türkçe", "English")` in JavaScript and `ds.L("Türkçe", "English")` in Python.
   English texts for ready-made containers live in the fields ending with `_en` in `catalog.py`.
+- Releasing: update `VERSION` in `app.py` and `.github/SURUM_NOTLARI.md`, then once it's on main run
+  `git tag v2.1.0 && git push origin v2.1.0`. GitHub Actions builds, tests and attaches the Mac (Apple Silicon, Intel)
+  and Windows packages to the Release. Pull requests are built too; the packages can be downloaded from the Actions page.
 
 ## License
 

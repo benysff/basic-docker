@@ -128,7 +128,7 @@ async function openNew(step = "secim", ctx = {}) {
   }
 
   if (step === "compose") {
-    const mac = S.data?.platform?.mac;
+    const mac = S.data?.platform?.mac || S.data?.platform?.win; // klasör seçme penceresi var mı
     Modal.open({
       title: L("Proje klasöründen kur", "Set up from a project folder"), sub: L("İçinde docker-compose.yml olan proje klasörünü seç.", "Pick a project folder that contains a docker-compose.yml."), size: "md",
       body: html`<div class="form">
@@ -624,7 +624,7 @@ async function openConnectToNetwork(c) {
 // ---------- Uzak Docker ekle ----------------------------------------------------------
 function openAddRemote(after) {
   let kind = "ssh";
-  const mac = S.data?.platform?.mac;
+  const mac = S.data?.platform?.mac || S.data?.platform?.win; // klasör seçme penceresi var mı
   Modal.open({
     title: L("Uzak Docker ekle", "Add remote Docker"),
     sub: L("Başka bir bilgisayardaki (sunucu, ev sunucusu, sanal makine) Docker'ı buradan yönet.",

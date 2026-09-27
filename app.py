@@ -31,9 +31,10 @@ import remote as rm
 import resources as rs
 import terminal as term
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+# Paketlenmiş (PyInstaller) sürümde dosyalar sys._MEIPASS altında durur.
+HERE = getattr(sys, "_MEIPASS", None) or os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(HERE, "static")
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 
 
 def build_html():
@@ -92,7 +93,7 @@ def api_state(p):
     snap["jobs"] = ds.recent_jobs()
     kind = _engine()
     remote = rm.remote_info() if kind == "remote" else None
-    snap["platform"] = {"mac": ds.IS_MAC, "engine": kind,
+    snap["platform"] = {"mac": ds.IS_MAC, "win": ds.IS_WIN, "engine": kind,
                         "engine_name": (remote["context"] or remote["host"]) if remote else ds.ENGINE_NAMES.get(kind, "Docker"),
                         "remote": remote, "version": VERSION}
     snap["ui"] = ds.load_settings()["arayuz"]
@@ -388,7 +389,17 @@ def main():
 
     parser = argparse.ArgumentParser(description="Basic Docker")
     parser.add_argument("--gelistirici", action="store_true", help="Web denetçisini aç (hata ayıklama)")
+    # Paket denemesi (CI): pencere açmadan her şey yükleniyor mu? Sonucu dosyaya yazar ve çıkar.
+    parser.add_argument("--kendini-dene", metavar="DOSYA", help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.kendini_dene:
+        html = build_html()
+        result = {"surum": VERSION, "html": len(html), "platform": sys.platform,
+                  "terminal": (getattr(term, "PtyProcess", None) is not None) if ds.IS_WIN else hasattr(term, "pty")}
+        ok = len(html) > 100_000 and html.rstrip().endswith("</html>") and result["terminal"]
+        with open(args.kendini_dene, "w", encoding="utf-8") as f:
+            json.dump({**result, "tamam": ok}, f)
+        sys.exit(0 if ok else 1)
 
     mac_identity()
     monitor.start()
