@@ -2,7 +2,7 @@
 
 /* =====================================================================
    Parça (konteyner) ayrıntısı: teşhis, genel bilgi, kayıtlar, kaynak,
-   komut çalıştırma, ortam değişkenleri, ham bilgi (inspect).
+   etkileşimli terminal, ortam değişkenleri, ham bilgi (inspect).
    ===================================================================== */
 
 const QUICK_CMDS = [
@@ -23,15 +23,16 @@ function dbQuickCmds(c) {
   return [];
 }
 
+const normTab = (t) => (t === "komut" ? "terminal" : t || "genel");
+
 const ContainerView = {
   mount(root, params) {
     this.root = root;
     this.id = params.id;
-    this.tab = params.tab || "genel";
+    this.tab = normTab(params.tab);
     this.detail = null;
     this.diag = null;
     this.log = { raw: "", query: "", errorsOnly: false, ts: false, lines: 500, since: "", follow: true, hints: {}, loading: false };
-    this.term = { history: [], busy: false, cmdHistory: [], idx: -1 };
     this.showEnv = new Set();
     root.innerHTML = String(html`<div class="page"><div id="c-head"></div><div id="c-diag"></div><div id="c-tabs"></div><div id="c-body"></div></div>`);
     root.addEventListener("click", this.onClick = (e) => this.click(e));
@@ -49,7 +50,7 @@ const ContainerView = {
 
   reparam(params) {
     if (params.id !== this.id) return false;
-    this.tab = params.tab || "genel";
+    this.tab = normTab(params.tab);
     this.render();
     this.enterTab();
     return true;
@@ -61,6 +62,8 @@ const ContainerView = {
     }
     this.offData();
     this.offStats();
+    this.offTerm?.();
+    this.termSession = null;
     stopStats(this);
     clearInterval(this.logTimer);
   },
@@ -76,6 +79,8 @@ const ContainerView = {
   },
 
   setTab(tab) {
+    // Odak terminaldeyse gövde güncellenmez (patch odaklı metin kutusuna dokunmaz); önce bırak.
+    if (this.tab === "terminal" && this.root.contains(document.activeElement)) document.activeElement.blur();
     history.replaceState(null, "", link(`/parca/${this.id}${tab === "genel" ? "" : "/" + tab}`));
     Router.params = { id: this.id, tab: tab === "genel" ? undefined : tab };
     this.tab = tab;
@@ -89,7 +94,7 @@ const ContainerView = {
       this.loadLogs(true);
       this.logTimer = setInterval(() => { if (this.log.follow) this.loadLogs(); }, 2000);
     }
-    if (this.tab === "komut") setTimeout(() => $("#term-in", this.root)?.focus(), 30);
+    if (this.tab === "terminal") setTimeout(() => this.termSession?.focus(), 60);
   },
 
   async loadDetail() {
@@ -165,9 +170,15 @@ const ContainerView = {
     }
     if (t.closest("[data-log-diagnose]")) return this.diagnoseNow();
     const qc = t.closest("[data-qcmd]");
-    if (qc) { $("#term-in", this.root).value = qc.dataset.qcmd; return this.runCmd(); }
-    if (t.closest("[data-term-clear]")) { this.term.history = []; return this.renderTerm(); }
-    if (t.closest("[data-term-run]")) return this.runCmd();
+    if (qc) return this.termSession?.run(qc.dataset.qcmd);
+    if (t.closest("[data-term-clear]")) return this.termSession?.clear();
+    if (t.closest("[data-term-reconnect]")) { this.termSession?.reconnect(); return this.termSession?.focus(); }
+    if (t.closest("[data-term-close]")) {
+      const f = this.found;
+      if (f) { TermHub.close(f.c.id); this.termSession = null; this.termStopped = true; this.renderBody(); }
+      return;
+    }
+    if (t.closest("[data-term-open]")) { this.termStopped = false; this.renderBody(); return this.termSession?.focus(); }
     if (t.closest("[data-raw-copy]")) return copyText(JSON.stringify(this.detail?.raw, null, 2), "Ham bilgi kopyalandı");
     if (t.closest("[data-policy]")) { const f = this.found; if (f) openRestartPolicy(f.c); return; }
     if (t.closest("[data-dump]")) { const f = this.found; if (f) runJob("/api/db/dokum", { id: f.c.id }, () => bus.emit("backups-changed")); return; }
@@ -187,23 +198,10 @@ const ContainerView = {
     if (id === "log-follow") this.log.follow = e.target.checked;
     if (id === "log-lines") { this.log.lines = +e.target.value; this.loadLogs(true); }
     if (id === "log-since") { this.log.since = e.target.value; this.loadLogs(true); }
+    if (id === "term-user") { this.termSession?.reconnect(e.target.value); this.termSession?.focus(); }
   },
 
-  key(e) {
-    if (e.target.id !== "term-in") return;
-    if (e.key === "Enter") { e.preventDefault(); this.runCmd(); }
-    const h = this.term.cmdHistory;
-    if (e.key === "ArrowUp" && h.length) {
-      e.preventDefault();
-      this.term.idx = Math.min(h.length - 1, this.term.idx + 1);
-      e.target.value = h[h.length - 1 - this.term.idx];
-    }
-    if (e.key === "ArrowDown" && h.length) {
-      e.preventDefault();
-      this.term.idx = Math.max(-1, this.term.idx - 1);
-      e.target.value = this.term.idx === -1 ? "" : h[h.length - 1 - this.term.idx];
-    }
-  },
+  key() {},
 
   async diagnoseNow() {
     const f = this.found;
@@ -214,28 +212,6 @@ const ContainerView = {
       if (!this.diag.findings.length && !this.diag.summary) flash("Kayıtlarda bilinen bir hata kalıbı bulunamadı.");
       $("#c-diag", this.root)?.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (err) { flash(err.message, true); }
-  },
-
-  async runCmd() {
-    const input = $("#term-in", this.root);
-    const cmd = input.value.trim();
-    const f = this.found;
-    if (!cmd || !f || this.term.busy) return;
-    this.term.busy = true;
-    this.term.cmdHistory.push(cmd);
-    this.term.idx = -1;
-    this.term.history.push({ cmd, out: null });
-    input.value = "";
-    this.renderTerm();
-    try {
-      const r = (await api("/api/parca/komut", { id: f.c.id, komut: cmd })).sonuc;
-      this.term.history[this.term.history.length - 1].out = r;
-    } catch (err) {
-      this.term.history[this.term.history.length - 1].out = { output: err.message, code: -1 };
-    }
-    this.term.busy = false;
-    this.renderTerm();
-    input.focus();
   },
 
   // ---------- çizim
@@ -273,7 +249,7 @@ const ContainerView = {
             ? html`<button class="btn stop" data-cact="durdur" data-id="${c.id}">${icon("stop")}Durdur</button>
                    <button class="btn" data-cact="yeniden" data-id="${c.id}">${icon("restart")}Yeniden başlat</button>`
             : html`<button class="btn go" data-cact="baslat" data-id="${c.id}">${icon("play")}Başlat</button>`}
-        ${c.running && S.data.platform?.mac ? html`<button class="btn" data-cact="terminal" data-id="${c.id}" title="macOS Terminal'de etkileşimli komut satırı aç">${icon("terminal")}Terminal</button>` : ""}
+        ${c.running && S.data.platform?.mac ? html`<button class="btn" data-cact="terminal" data-id="${c.id}" title="Ayrı bir macOS Terminal penceresinde aç">${icon("external")}Terminal'de aç</button>` : ""}
         <button class="icon-btn" data-cact="menu" data-id="${c.id}" aria-label="Diğer işlemler" aria-haspopup="menu" title="Diğer işlemler">${icon("more")}</button>`,
     }));
     this.renderDiag();
@@ -281,7 +257,7 @@ const ContainerView = {
       { id: "genel", label: "Genel", icon: "info" },
       { id: "kayitlar", label: T("logs"), icon: "logs", alert: c.level === "err" ? "err" : null },
       { id: "kaynak", label: "Kaynak", icon: "gauge" },
-      { id: "komut", label: "Komut çalıştır", icon: "terminal" },
+      { id: "terminal", label: "Terminal", icon: "terminal" },
       { id: "ayarlar", label: T("env"), icon: "sliders", count: this.detail?.env?.length },
       { id: "incele", label: "Ham bilgi", icon: "code" },
     ], this.tab));
@@ -326,10 +302,7 @@ const ContainerView = {
       if (!$("#log-view", body)) patch(body, this.logsShell());
       return this.renderLogs();
     }
-    if (this.tab === "komut") {
-      if (!$("#term-out", body)) patch(body, this.termShell(f.c));
-      return this.renderTerm();
-    }
+    if (this.tab === "terminal") return this.renderTerminal(f.c);
     if (this.detail?.error) return patch(body, callout({ level: "err", text: this.detail.error }));
     if (this.tab === "genel") return patch(body, this.overview(f));
     if (this.tab === "kaynak") return patch(body, this.usage(f.c));
@@ -561,40 +534,73 @@ const ContainerView = {
     }
   },
 
+  renderTerminal(c) {
+    const body = $("#c-body", this.root);
+    const existing = TermHub.get(c.id);
+    if (this.termStopped || (!c.running && !existing)) {
+      this.offTerm?.();
+      this.termSession = null;
+      return patch(body, html`
+        <div class="term-closed">
+          ${!c.running
+            ? callout({ level: "warn", text: "Parça kapalı. Terminal açmak için önce başlat.",
+                actions: html`<button class="btn go sm" data-cact="baslat" data-id="${c.id}">${icon("play")}Başlat</button>` })
+            : html`<p class="muted">Terminal oturumu kapalı.</p>
+                   <button class="btn primary" data-term-open>${icon("terminal")}Yeni oturum aç</button>`}
+        </div>`);
+    }
+    let slot = $("#xterm-slot", body);
+    if (!slot) {
+      patch(body, this.termShell(c));
+      slot = $("#xterm-slot", body);
+    }
+    const session = TermHub.open(c);
+    if (this.termSession !== session) {
+      this.offTerm?.();
+      this.termSession = session;
+      this.offTerm = session.onChange(() => this.renderTermBar());
+    }
+    session.mount(slot);
+    this.renderTermBar();
+  },
+
   termShell(c) {
     const quick = [...dbQuickCmds(c), ...QUICK_CMDS];
     return html`
-      ${c.running ? "" : callout({ level: "warn", text: "Parça kapalı. Komut çalıştırmak için önce başlat." })}
-      <div class="term">
-        <div class="term-out" id="term-out" tabindex="0" aria-live="polite"></div>
-        <div class="term-in-row">
-          <span class="term-prompt mono" aria-hidden="true">${c.name} $</span>
-          <input id="term-in" class="mono" placeholder="Komut yaz ve Enter'a bas (ör. ls -la)" autocomplete="off" spellcheck="false" aria-label="Komut">
-          <button class="btn sm primary" data-term-run>${icon("play")}Çalıştır</button>
-        </div>
+      <div class="xterm-wrap">
+        <div class="xterm-bar" id="xterm-bar"></div>
+        <div class="xterm-slot" id="xterm-slot"></div>
       </div>
       <div class="quick-cmds">
-        <span class="muted small">Hazır komutlar:</span>
+        <span class="muted small">Hazır komutlar (terminale yazar):</span>
         ${quick.map(([cmd, label]) => html`<button class="chip" data-qcmd="${cmd}" title="${cmd}">${label}</button>`)}
-        <button class="chip ghost" data-term-clear>${icon("trash")}Temizle</button>
       </div>
-      <p class="muted small">Her komut parçanın içinde ayrı çalışır (<code>sh -c</code>). Etkileşimli programlar (vim, top) için üstteki <b>Terminal</b> düğmesini kullan. ↑/↓ ile önceki komutlar.</p>`;
+      <p class="muted small">Parçanın içinde gerçek bir terminal: <code>cd</code>, sekme tamamlama, <code>top</code>, <code>vim</code> çalışır.
+        Kopyalamak için seç + ⌘C, yapıştırmak için ⌘V. Oturum, sayfalar arasında gezinince kopmaz; çıkmak için <code>exit</code>.</p>`;
   },
 
-  renderTerm() {
-    const out = $("#term-out", this.root);
-    if (!out) return;
-    if (!this.term.history.length) {
-      patch(out, html`<div class="term-empty">Parçanın içinde komut çalıştır, çıktısı burada görünür.</div>`);
-      return;
-    }
-    patch(out, html`${this.term.history.map((h) => html`
-      <div class="term-entry">
-        <div class="term-cmd mono"><span class="term-prompt">$</span> ${h.cmd}</div>
-        ${h.out === null ? html`<div class="term-running"><span class="spinner"></span>Çalışıyor…</div>` : html`
-          <pre class="term-result ${h.out.code === 0 ? "" : "fail"}">${h.out.output || "(çıktı yok)"}</pre>
-          <div class="term-status small">${h.out.timeout ? badge("warn", "Zaman aşımı (30 sn)") : h.out.code === 0 ? badge("ok", `Tamam · ${h.out.seconds} sn`) : badge("err", `Çıkış kodu ${h.out.code}`)}</div>`}
-      </div>`)}`);
-    out.scrollTop = out.scrollHeight;
+  renderTermBar() {
+    const s = this.termSession;
+    const bar = $("#xterm-bar", this.root);
+    if (!s || !bar) return;
+    const [lvl, text] = {
+      baglaniyor: ["warn", "Bağlanıyor…"],
+      acik: ["ok", "Bağlı"],
+      kapandi: ["info", "Oturum kapandı · Enter ile yeniden bağlan"],
+      hata: ["err", s.error || "Bağlantı hatası"],
+    }[s.state];
+    patch(bar, html`
+      <span class="xterm-status"><span class="dot lvl-${lvl}"></span>${text}</span>
+      <span class="mono small muted xterm-name">${s.user === "root" ? "root@" : ""}${s.name}</span>
+      <span class="grow"></span>
+      <label class="small muted xterm-user">Kullanıcı
+        <select id="term-user" aria-label="Terminal kullanıcısı">
+          <option value="" ${s.user ? "" : "selected"}>varsayılan</option>
+          <option value="root" ${s.user === "root" ? "selected" : ""}>root</option>
+        </select>
+      </label>
+      <button class="btn sm" data-term-clear title="Ekranı temizle">${icon("trash")}Temizle</button>
+      <button class="btn sm" data-term-reconnect title="Oturumu yeniden başlat">${icon("restart")}Yeniden bağlan</button>
+      <button class="btn sm" data-term-close title="Oturumu kapat">${icon("close")}Kapat</button>`);
   },
 };

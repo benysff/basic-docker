@@ -10,6 +10,7 @@ Geliştirirken:  .venv/bin/python app.py --gelistirici
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import os
 import re
@@ -27,6 +28,7 @@ import docker_service as ds
 import insights
 import monitor
 import resources as rs
+import terminal as term
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(HERE, "static")
@@ -245,6 +247,12 @@ ROUTES = {
     "/api/parca/detay": lambda p: {"detay": ds.container_detail(_s(p, "id"))},
     "/api/parca/teshis": api_diagnose,
     "/api/parca/komut": lambda p: {"sonuc": ds.exec_command(_s(p, "id"), _s(p, "komut"))},
+    # Uygulama içi etkileşimli terminal (docker exec -it)
+    "/api/terminal/ac": lambda p: term.open_session(_s(p, "id"), p.get("cols"), p.get("rows"), _s(p, "kullanici")),
+    "/api/terminal/oku": lambda p: term.read(_s(p, "sid")),
+    "/api/terminal/yaz": lambda p: term.write(_s(p, "sid"), p.get("veri")),
+    "/api/terminal/boyut": lambda p: term.resize(_s(p, "sid"), p.get("cols"), p.get("rows")),
+    "/api/terminal/kapat": lambda p: term.close(_s(p, "sid")),
     "/api/parca/politika": lambda p: {"metin": ds.set_restart_policy(_s(p, "id"), _s(p, "politika"))},
     "/api/kayitlar": api_logs,
     "/api/kayit-ipuclari": api_line_hints,
@@ -340,7 +348,8 @@ def main():
     mac_identity()
     monitor.start()
     # Oturum kapanırken gelen SIGTERM'de de arkada docker süreci kalmasın.
-    signal.signal(signal.SIGTERM, lambda *_: (monitor._kill_children(), os._exit(0)))
+    signal.signal(signal.SIGTERM, lambda *_: (term.close_all(), monitor._kill_children(), os._exit(0)))
+    atexit.register(term.close_all)
 
     webview.create_window(
         "Basic Docker",

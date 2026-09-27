@@ -21,7 +21,7 @@ yaradığını sade Türkçeyle söyler. **Docker Desktop, OrbStack ve Colima** 
 - **Bağlantı adresi hazır gelir.** Veritabanı parçalarında `.env` dosyana yapıştıracağın `DATABASE_URL=…` satırı tek tıkla kopyalanır; bir uygulamanın bütün bağlantıları tek seferde `.env` olarak da kopyalanabilir.
 - **Canlı kaynak kullanımı.** Her parçanın işlemci, bellek, ağ ve disk kullanımı küçük grafiklerle.
 - **Kayıtlar (log).** Arama, "sadece hatalar", zaman aralığı, canlı takip. Bir uygulamanın bütün parçalarının kayıtları tek akışta da okunur.
-- **Uygulama içinde komut çalıştır.** Terminal açmadan parçanın içinde `ls`, `env`, `psql …` gibi komutlar; veritabanına göre hazır komutlar.
+- **Parçanın içine gir: gerçek terminal.** Uygulamanın içinde, parçanın içinde çalışan tam bir terminal (xterm.js): `cd`, sekme tamamlama, renkler, `top`, `vim` çalışır. İstersen root olarak girersin; sayfalar arasında gezinince oturum kopmaz. Veritabanına göre hazır komutlar tek tıkla terminale yazılır.
 - **Compose projeleri için:** Güncelle (yeni sürümleri indir, değişenleri yeniden oluştur), kodu yeniden derle, compose dosyasını gör.
 
 ### Docker Desktop ve OrbStack'te olmayanlar
@@ -108,11 +108,12 @@ Konteynerleri şu sırayla gruplar:
 | `app.py` | Pencereyi açar ve arayüzün çağırdığı işlemleri Python'a bağlar |
 | `docker_service.py` | Uygulamalar ve parçalar: okuma, gruplama, açıklamalar, başlat/durdur/sil/oluştur, setler |
 | `resources.py` | Kalıplar, veri kutuları, ağlar, kapı haritası, temizlik, motor bilgisi |
+| `terminal.py` | Uygulama içi terminal: `docker exec -it` oturumlarını sözde terminal (PTY) üzerinden yönetir |
 | `insights.py` | Teşhis: çıkış kodları ve kayıtlardaki bilinen hatalar → sade Türkçe açıklama |
 | `backups.py` | Veri kutusu yedeği, veritabanı dökümü ve geri yükleme |
 | `monitor.py` | Arka planda canlı kaynak kullanımı ve etkinlik geçmişi (çökme bildirimi) |
 | `catalog.py` | Hazır parça listesi |
-| `static/` | Arayüz: `css/` (tasarım belirteçleri, bileşenler) ve `js/` (her sayfa `views/` altında ayrı dosya) |
+| `static/` | Arayüz: `css/` (tasarım belirteçleri, bileşenler) ve `js/` (her sayfa `views/` altında ayrı dosya), `vendor/xterm/` (xterm.js 6, MIT, internetsiz çalışsın diye dahil) |
 | `kur.command`, `setup.py` | Kurulum ve `.app` paketi |
 
 Ayarlar (görünen adlar, notlar, elle gruplamalar, setler, tercihler) `~/.basic-docker/ayarlar.json`,

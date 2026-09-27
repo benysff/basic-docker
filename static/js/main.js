@@ -229,6 +229,7 @@ Modal.el.addEventListener("close", () => {
 
 // ---------- Klavye kısayolları ----------------------------------------------------------
 document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey && !e.metaKey && e.target.closest?.(".xterm")) return;
   const mod = e.metaKey || e.ctrlKey;
   const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || "") || document.activeElement?.isContentEditable;
   if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); Palette.el?.open ? Palette.close() : Palette.open(); return; }
