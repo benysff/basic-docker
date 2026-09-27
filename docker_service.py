@@ -103,7 +103,7 @@ if os.path.isdir(_OLD_SETTINGS_DIR) and not os.path.exists(SETTINGS_DIR):
         pass
 SETTINGS_FILE = os.path.join(SETTINGS_DIR, "ayarlar.json")
 _settings_lock = threading.Lock()
-_SETTINGS_KEYS = ("adlar", "notlar", "eslestirme", "projeler", "arayuz")
+_SETTINGS_KEYS = ("adlar", "notlar", "eslestirme", "projeler", "arayuz", "setler")
 
 
 def _read_settings():
@@ -186,7 +186,7 @@ IMAGE_KNOWN = [
     (r"n8n", "app", "Otomasyon aracı (n8n)", "Sürükle-bırak ile otomasyonlar kurduğun panel."),
     (r"grafana|prometheus|loki|uptime-kuma", "monitor", "İzleme aracı",
      "Uygulamanın sağlığını ve istatistiklerini grafiklerle gösterir."),
-    (r"ollama", "ai", "Yapay zekâ modeli (Ollama)", "Bilgisayarında yapay zekâ modeli çalıştırır."),
+    (r"ollama", "model", "Model sunucusu (Ollama)", "Bilgisayarında yerel model sunucusu çalıştırır."),
 ]
 
 SERVICE_GENERIC = [
@@ -216,7 +216,7 @@ IMAGE_GENERIC = [
 ]
 
 KIND_ORDER = ["frontend", "app", "backend", "web", "db", "cache", "queue", "storage", "search",
-              "worker", "scheduler", "mail", "panel", "monitor", "ai", "build", "backup", "task",
+              "worker", "scheduler", "mail", "panel", "monitor", "model", "build", "backup", "task",
               "test", "other"]
 # Bir kere çalışıp kapanması normal olan türler: uygulamanın "çalışıyor" durumunu bozmazlar.
 ONESHOT_KINDS = {"task", "test", "build"}
@@ -492,6 +492,8 @@ def build_container(attrs):
         "service": service,
         "state": state.get("Status", ""),
         "running": state.get("Status") == "running",
+        # Durdurulabilir mi? (çalışıyor, sürekli yeniden başlıyor ya da duraklatılmış)
+        "up": state.get("Status") in ("running", "restarting", "paused"),
         "health": (state.get("Health") or {}).get("Status") if state.get("Status") == "running" else None,
         "exit_code": state.get("ExitCode", 0),
         "started_at": state.get("StartedAt", ""),
@@ -509,6 +511,12 @@ def build_container(attrs):
         "networks": sorted(((attrs.get("NetworkSettings") or {}).get("Networks") or {}).keys()),
         "compose": compose,
         "template": labels.get("basicdocker.template"),
+        "image_id": attrs.get("Image", ""),
+        "oom": bool(state.get("OOMKilled")),
+        "created": attrs.get("Created", ""),
+        "restart_policy": ((attrs.get("HostConfig") or {}).get("RestartPolicy") or {}).get("Name") or "no",
+        "restart_count": attrs.get("RestartCount", 0),
+        "platform": attrs.get("Platform", ""),
         "_labels": labels,
     }
 
@@ -659,6 +667,7 @@ def snapshot():
             "containers": cs,
             "total": len(cs),
             "running": sum(1 for c in cs if c["running"]),
+            "up": sum(1 for c in cs if c["up"]),
             "state": state,
             "state_text": state_text,
             "hint": hint,
@@ -925,11 +934,41 @@ def _delete_app(job, app, with_data):
     return "Silindi." + (" Veriler de silindi." if with_data else " Veriler (veri kutuları) korundu.")
 
 
+def _compose_or_fail(app):
+    comp = app.get("compose")
+    if not comp or not comp.get("exists"):
+        raise UserError("Bu işlem için uygulamanın docker-compose dosyası bilgisayarında bulunmalı.")
+    return _compose_args(app["key"], comp["files"], comp["dir"]), comp["dir"] or None
+
+
+def _update_app(job, app):
+    """Kalıpların yeni sürümlerini indirir, değişen parçaları yeniden oluşturur."""
+    args, cwd = _compose_or_fail(app)
+    job.log("Yeni sürümler indiriliyor (kendi kodundan derlenen parçalar atlanır)…")
+    if _stream(job, args + ["pull", "--ignore-buildable"], cwd=cwd, timeout=1800) != 0:
+        job.log("Bazı kalıplar indirilemedi; eldekilerle devam ediliyor.")
+    job.log("Değişen parçalar yeniden oluşturuluyor…")
+    if _stream(job, args + ["up", "-d", "--remove-orphans"], cwd=cwd, timeout=1800) != 0:
+        raise UserError("Güncelleme tamamlanamadı. Ayrıntılara bak.")
+    return "Güncellendi. Değişmeyen parçalar olduğu gibi kaldı."
+
+
+def _rebuild_app(job, app):
+    """Kendi kodunu yeniden derleyip parçaları baştan oluşturur (docker compose up --build)."""
+    args, cwd = _compose_or_fail(app)
+    job.log("Kod yeniden derleniyor ve parçalar baştan oluşturuluyor…")
+    if _stream(job, args + ["up", "-d", "--build", "--force-recreate"], cwd=cwd, timeout=3600) != 0:
+        raise UserError("Yeniden kurulum başarısız oldu. Ayrıntılara bak.")
+    return "Yeniden derlendi ve başlatıldı."
+
+
 APP_ACTIONS = {
     "baslat": ("Başlatılıyor", _start_app),
     "durdur": ("Durduruluyor", _stop_app),
     "yeniden": ("Yeniden başlatılıyor", _restart_app),
     "sil": ("Siliniyor", _delete_app),
+    "guncelle": ("Güncelleniyor", _update_app),
+    "derle": ("Yeniden derleniyor", _rebuild_app),
 }
 
 
@@ -970,11 +1009,20 @@ def container_action(cid, action, with_data=False):
 
     def run(job):
         if action == "baslat":
-            code = _stream(job, ["start", name], timeout=180)
+            # Duraklatılmış parça "start" ile açılmaz; devam ettirilir.
+            code = _stream(job, ["unpause" if c["state"] == "paused" else "start", name], timeout=180)
         elif action == "durdur":
+            if c["state"] == "paused":
+                _stream(job, ["unpause", name], timeout=60)
             code = _stream(job, ["stop", name], timeout=180)
         elif action == "yeniden":
             code = _stream(job, ["restart", name], timeout=240)
+        elif action == "duraklat":
+            code = _stream(job, ["pause", name], timeout=60)
+        elif action == "devam":
+            code = _stream(job, ["unpause", name], timeout=60)
+        elif action == "oldur":
+            code = _stream(job, ["kill", name], timeout=60)
         elif action == "sil":
             _remove_containers(job, [c], with_data)
             update_settings(lambda s: s["eslestirme"].pop(name, None))
@@ -985,10 +1033,52 @@ def container_action(cid, action, with_data=False):
             raise UserError("İşlem başarısız oldu. Kayıtlara bak.")
         return "Tamam."
 
-    titles = {"baslat": "başlatılıyor", "durdur": "durduruluyor", "yeniden": "yeniden başlatılıyor", "sil": "siliniyor"}
+    titles = {"baslat": "başlatılıyor", "durdur": "durduruluyor", "yeniden": "yeniden başlatılıyor", "sil": "siliniyor",
+              "duraklat": "duraklatılıyor", "devam": "devam ettiriliyor", "oldur": "zorla kapatılıyor"}
     if action not in titles:
         raise UserError("Bilinmeyen işlem.")
     return start_job(f"{c['role_title']} ({name}) {titles[action]}", app["key"], run)
+
+
+def bulk_container_action(ids, action, with_data=False):
+    """Seçilen birçok parçaya aynı işlemi tek bir iş içinde sırayla uygular."""
+    if action not in ("baslat", "durdur", "yeniden", "sil"):
+        raise UserError("Bilinmeyen işlem.")
+    ids = [i for i in (ids or []) if isinstance(i, str)][:200]
+    targets = []
+    for cid in ids:
+        try:
+            targets.append(get_container(cid)[1])
+        except UserError:
+            pass
+    if not targets:
+        raise UserError("Seçilen parçalar bulunamadı.")
+    verb = {"baslat": "start", "durdur": "stop", "yeniden": "restart"}.get(action)
+
+    def run(job):
+        failed = []
+        if action == "sil":
+            _remove_containers(job, targets, with_data)
+            update_settings(lambda s: [s["eslestirme"].pop(c["name"], None) for c in targets])
+            return f"{len(targets)} parça silindi."
+        if action == "baslat":
+            todo = [c for c in targets if not c["up"] or c["state"] == "paused"]
+        else:
+            todo = [c for c in targets if c["up"]]
+        for c in (_dependency_order(todo) if action == "baslat" else todo):
+            job.log(f"{c['role_title']} ({c['name']})…")
+            paused = c["state"] == "paused"
+            if paused and action == "durdur":
+                _stream(job, ["unpause", c["name"]], timeout=60)
+            cmd = "unpause" if paused and action == "baslat" else verb
+            if _stream(job, [cmd, c["name"]], timeout=240) != 0:
+                failed.append(c["name"])
+        if failed:
+            raise UserError("Şunlarda sorun çıktı: " + ", ".join(failed))
+        return f"{len(todo)} parça için tamamlandı."
+
+    titles = {"baslat": "başlatılıyor", "durdur": "durduruluyor", "yeniden": "yeniden başlatılıyor", "sil": "siliniyor"}
+    return start_job(f"{len(targets)} parça {titles[action]}", None, run)
 
 
 def move_container(cid, target_key, target_name=""):
@@ -1025,23 +1115,254 @@ def logs(cid, tail=400):
         raise UserError("Kayıtlar zamanında okunamadı.")
 
 
-def stats(key):
+# ---------------------------------------------------------------------------
+# Parçanın ayrıntıları, komut çalıştırma, yeniden başlama kuralı
+# ---------------------------------------------------------------------------
+
+SECRET_KEY_RE = re.compile(r"PASS|SECRET|TOKEN|KEY|PWD|CREDENTIAL|PRIVATE|AUTH", re.I)
+
+RESTART_POLICIES = {
+    "no": "Hiçbir zaman (elle başlatırsın)",
+    "on-failure": "Sadece hata verip kapanırsa",
+    "unless-stopped": "Her zaman (sen durdurmadıysan)",
+    "always": "Her zaman",
+}
+
+
+def inspect_container(name):
+    code, out, err = docker("inspect", name, timeout=20)
+    if code != 0:
+        raise UserError("Parça okunamadı: " + err.strip()[-200:])
+    try:
+        return json.loads(out)[0]
+    except (ValueError, IndexError):
+        raise UserError("Parça bilgisi anlaşılamadı.")
+
+
+def container_detail(cid):
+    """Ayrıntı sayfası için: ortam değişkenleri, etiketler, ağ adresleri, sağlık kontrolü ve ham bilgi."""
+    app, c = get_container(cid)
+    attrs = inspect_container(c["name"])
+    cfg = attrs.get("Config") or {}
+    host = attrs.get("HostConfig") or {}
+    state = attrs.get("State") or {}
+    env = []
+    for item in cfg.get("Env") or []:
+        k, _, v = item.partition("=")
+        env.append({"key": k, "value": v, "secret": bool(SECRET_KEY_RE.search(k)) and bool(v)})
+    nets = []
+    for nname, n in ((attrs.get("NetworkSettings") or {}).get("Networks") or {}).items():
+        nets.append({
+            "name": nname,
+            "ip": n.get("IPAddress", ""),
+            "aliases": [a for a in (n.get("Aliases") or []) if a != c["short_id"]][:6],
+            "gateway": n.get("Gateway", ""),
+        })
+    health = state.get("Health") or {}
+    health_log = [{
+        "start": h.get("Start", ""),
+        "code": h.get("ExitCode"),
+        "output": strip_ansi(h.get("Output", "")).strip()[-600:],
+    } for h in (health.get("Log") or [])[-5:]]
+    hc = cfg.get("Healthcheck") or {}
+    return {
+        "container": c,
+        "app": {"key": app["key"], "name": app["name"]},
+        "env": env,
+        "labels": cfg.get("Labels") or {},
+        "cmd": cfg.get("Cmd") or [],
+        "entrypoint": cfg.get("Entrypoint") or [],
+        "workdir": cfg.get("WorkingDir", ""),
+        "user": cfg.get("User", ""),
+        "hostname": cfg.get("Hostname", ""),
+        "networks": nets,
+        "restart": {"policy": (host.get("RestartPolicy") or {}).get("Name") or "no",
+                    "options": RESTART_POLICIES},
+        "memory_limit": host.get("Memory") or 0,
+        "cpu_limit": (host.get("NanoCpus") or 0) / 1e9,
+        "health": {
+            "status": health.get("Status"),
+            "failing": health.get("FailingStreak", 0),
+            "test": " ".join(hc.get("Test") or [])[:300],
+            "log": health_log,
+        },
+        "raw": attrs,
+    }
+
+
+def exec_command(cid, command, timeout=30):
+    """Parçanın içinde tek bir komut çalıştırıp çıktısını döndürür (uygulama içi mini terminal)."""
+    _, c = get_container(cid)
+    command = (command or "").strip()
+    if not command:
+        raise UserError("Bir komut yaz.")
+    if len(command) > 2000:
+        raise UserError("Komut çok uzun.")
+    if not c["running"]:
+        raise UserError("Parça kapalıyken içinde komut çalıştırılamaz. Önce başlat.")
+    started = time.time()
+    try:
+        p = subprocess.run(
+            [DOCKER, "exec", c["name"], "sh", "-c", command],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+            text=True, encoding="utf-8", errors="replace", timeout=timeout, env=ENV,
+        )
+    except subprocess.TimeoutExpired as e:
+        out = e.stdout if isinstance(e.stdout, str) else (e.stdout or b"").decode("utf-8", "replace")
+        return {"output": strip_ansi(out or "")[-60000:], "code": None, "timeout": True,
+                "seconds": round(time.time() - started, 1)}
+    out = strip_ansi(p.stdout or "")
+    if p.returncode == 126 or (p.returncode == 127 and "sh" in out and "not found" in out and len(out) < 300):
+        out += "\n(Bu parçanın içinde komut satırı (sh) yok. Bazı küçük kalıplarda komut çalıştırılamaz.)"
+    return {"output": out[-60000:], "code": p.returncode, "timeout": False,
+            "seconds": round(time.time() - started, 1)}
+
+
+def set_restart_policy(cid, policy):
+    if policy not in RESTART_POLICIES:
+        raise UserError("Geçersiz seçim.")
+    _, c = get_container(cid)
+    code, _, err = docker("update", "--restart", policy, c["name"], timeout=30)
+    if code != 0:
+        raise UserError("Değiştirilemedi: " + err.strip()[-200:])
+    return RESTART_POLICIES[policy]
+
+
+_TS_RE = re.compile(r"^(\d{4}-\d\d-\d\dT[\d:.]+Z?)\s?")
+
+
+def app_logs(key, tail=300):
+    """Uygulamanın bütün parçalarının kayıtlarını zamana göre birleştirir."""
     app = get_app(key)
-    names = [c["name"] for c in app["containers"] if c["running"]]
-    if not names:
-        return {}
-    _, out, _ = docker("stats", "--no-stream", "--format", "{{json .}}", *names, timeout=25)
-    result = {}
-    for line in out.splitlines():
+    tail = max(20, min(int(tail or 300), 3000))
+    merged = []
+    for c in app["containers"]:
         try:
-            d = json.loads(line)
-        except ValueError:
+            p = subprocess.run(
+                [DOCKER, "logs", "--timestamps", "--tail", str(tail), c["name"]],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, encoding="utf-8", errors="replace", timeout=20, env=ENV,
+            )
+        except subprocess.TimeoutExpired:
             continue
-        result[d.get("Name", "")] = {
-            "cpu": d.get("CPUPerc", ""),
-            "mem": (d.get("MemUsage", "").split("/")[0]).strip(),
-        }
-    return result
+        label = c["compose"]["service"] if c["compose"] and c["compose"]["service"] else c["name"]
+        for line in strip_ansi(p.stdout).splitlines():
+            m = _TS_RE.match(line)
+            ts = m.group(1) if m else ""
+            merged.append((ts, label, line[m.end():] if m else line))
+    merged.sort(key=lambda x: x[0])
+    return [{"t": t, "src": s, "line": ln} for t, s, ln in merged[-tail * 2:]]
+
+
+def logs_ex(cid, tail=500, timestamps=False, since=""):
+    """Kayıtları zaman damgasıyla ya da belirli bir süreden beri okur."""
+    _, c = get_container(cid)
+    args = [DOCKER, "logs", "--tail", str(max(10, min(int(tail or 500), 20000)))]
+    if timestamps:
+        args.append("--timestamps")
+    if since and re.fullmatch(r"\d+[smhd]", since):
+        args += ["--since", since]
+    args.append(c["name"])
+    try:
+        p = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           text=True, encoding="utf-8", errors="replace", timeout=25, env=ENV)
+    except subprocess.TimeoutExpired:
+        raise UserError("Kayıtlar zamanında okunamadı.")
+    return strip_ansi(p.stdout)
+
+
+def app_env(key):
+    """Uygulamanın bütün bağlantı bilgilerini tek bir .env metni olarak verir."""
+    app = get_app(key)
+    blocks = []
+    for c in app["containers"]:
+        if c["connection"]:
+            blocks.append(f"# {c['role_title']} ({c['name']})\n{c['connection']['text']}")
+    if not blocks:
+        raise UserError("Bu uygulamada bağlantı bilgisi üretilebilen bir parça (veritabanı, Redis…) yok.")
+    return f"# {app['name']} — Basic Docker tarafından üretildi\n\n" + "\n\n".join(blocks) + "\n"
+
+
+def compose_files(key):
+    app = get_app(key)
+    comp = app.get("compose") or {}
+    out = []
+    for f in comp.get("files") or []:
+        try:
+            with open(f, encoding="utf-8", errors="replace") as fh:
+                out.append({"path": f, "text": fh.read(200_000)})
+        except OSError as e:
+            out.append({"path": f, "text": f"(Okunamadı: {e})"})
+    if not out:
+        raise UserError("Bu uygulamanın compose dosyası bilinmiyor.")
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Çalışma setleri: birkaç uygulamayı tek tuşla birlikte aç/kapat
+# ---------------------------------------------------------------------------
+
+def list_sets():
+    sets = load_settings()["setler"]
+    return [{"id": k, "name": v.get("ad", k), "apps": list(v.get("uygulamalar") or [])}
+            for k, v in sorted(sets.items(), key=lambda kv: kv[1].get("ad", kv[0]).lower())]
+
+
+def save_set(set_id, name, apps):
+    name = (name or "").strip()[:60]
+    if not name:
+        raise UserError("Sete bir ad ver (ör. İş, Kişisel projeler).")
+    apps = [str(a) for a in (apps or []) if isinstance(a, str)][:50]
+    if not apps:
+        raise UserError("Sete en az bir uygulama ekle.")
+    if not set_id:
+        base = slugify(name) or uuid.uuid4().hex[:6]
+        existing = load_settings()["setler"]
+        set_id, i = base, 2
+        while set_id in existing:
+            set_id = f"{base}-{i}"
+            i += 1
+
+    def apply(s):
+        s["setler"][set_id] = {"ad": name, "uygulamalar": apps}
+
+    update_settings(apply)
+    return set_id
+
+
+def delete_set(set_id):
+    update_settings(lambda s: s["setler"].pop(set_id, None))
+
+
+def run_set(set_id, action):
+    sets = {s["id"]: s for s in list_sets()}
+    st = sets.get(set_id)
+    if not st:
+        raise UserError("Set bulunamadı.")
+    if action not in ("baslat", "durdur"):
+        raise UserError("Bilinmeyen işlem.")
+
+    def run(job):
+        known = {a["key"]: a for a in snapshot()["apps"]}
+        missing = [k for k in st["apps"] if k not in known]
+        failed = []
+        for key in st["apps"]:
+            if key not in known:
+                continue
+            app = get_app(key)
+            job.log(f"{app['name']}: {'başlatılıyor' if action == 'baslat' else 'durduruluyor'}…")
+            try:
+                (_start_app if action == "baslat" else _stop_app)(job, app)
+            except UserError as e:
+                failed.append(app["name"])
+                job.log(f"{app['name']}: {e}")
+        if missing:
+            job.log("Artık olmayan uygulamalar atlandı: " + ", ".join(missing))
+        if failed:
+            raise UserError("Şunlarda sorun çıktı: " + ", ".join(failed))
+        return f"“{st['name']}” seti {'başlatıldı' if action == 'baslat' else 'durduruldu'}."
+
+    return start_job(f"{st['name']} seti: {'başlatılıyor' if action == 'baslat' else 'durduruluyor'}", None, run)
 
 
 # ---------------------------------------------------------------------------
@@ -1333,10 +1654,43 @@ def open_terminal(name):
     return None
 
 
-def start_docker_desktop():
+def engine_kind():
+    """Hangi Docker motoru kullanılıyor: 'orbstack', 'docker-desktop', 'colima' ya da 'diger'."""
+    endpoint = ""
+    if DOCKER:
+        code, out, _ = docker("context", "inspect", "--format", "{{.Endpoints.docker.Host}}", timeout=8)
+        if code == 0:
+            endpoint = out.strip()
+    endpoint = os.environ.get("DOCKER_HOST") or endpoint
+    if ".orbstack" in endpoint:
+        return "orbstack"
+    if "colima" in endpoint:
+        return "colima"
+    if ".docker/run" in endpoint or "docker.raw.sock" in endpoint:
+        return "docker-desktop"
     if IS_MAC:
-        subprocess.Popen(["open", "-a", "Docker"])
-        return "Docker açılıyor… Bu 20-30 saniye sürebilir."
+        has_orb = os.path.isdir("/Applications/OrbStack.app")
+        has_dd = os.path.isdir("/Applications/Docker.app")
+        if has_orb and not has_dd:
+            return "orbstack"
+        if has_dd and not has_orb:
+            return "docker-desktop"
+    return "diger"
+
+
+ENGINE_NAMES = {"orbstack": "OrbStack", "docker-desktop": "Docker Desktop", "colima": "Colima", "diger": "Docker"}
+
+
+def start_docker_desktop():
+    """Docker motorunu açar. OrbStack kullanan birinde OrbStack'i, değilse Docker Desktop'ı açar."""
+    if IS_MAC:
+        kind = engine_kind()
+        if kind == "colima":
+            subprocess.Popen(["colima", "start"], env=ENV)
+            return "Colima başlatılıyor… Bu 20-30 saniye sürebilir."
+        app = "OrbStack" if kind == "orbstack" else "Docker"
+        subprocess.Popen(["open", "-a", app])
+        return f"{ENGINE_NAMES.get(kind if kind != 'diger' else 'docker-desktop')} açılıyor… Bu 10-30 saniye sürebilir."
     if sys.platform.startswith("win"):
         path = os.path.expandvars(r"%ProgramFiles%\Docker\Docker\Docker Desktop.exe")
         if os.path.exists(path):

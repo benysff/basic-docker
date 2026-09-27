@@ -1,60 +1,69 @@
 <!doctype html>
-<html lang="tr">
+<html lang="tr" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <title>Basic Docker</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%232563eb'/><rect x='7' y='15' width='8' height='8' rx='1.5' fill='white'/><rect x='17' y='15' width='8' height='8' rx='1.5' fill='white'/><rect x='12' y='6' width='8' height='8' rx='1.5' fill='white' opacity='.75'/></svg>">
-  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%232f6fe4'/><rect x='7' y='15' width='8' height='8' rx='1.5' fill='white'/><rect x='17' y='15' width='8' height='8' rx='1.5' fill='white'/><rect x='12' y='6' width='8' height='8' rx='1.5' fill='white' opacity='.75'/></svg>">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/views.css">
 </head>
 <body>
-  <header class="top">
-    <div class="brand">
-      <div class="logo" aria-hidden="true">
-        <svg viewBox="0 0 32 32"><rect x="7" y="15" width="8" height="8" rx="1.5"/><rect x="17" y="15" width="8" height="8" rx="1.5"/><rect x="12" y="6" width="8" height="8" rx="1.5" opacity=".7"/></svg>
-      </div>
-      <div>
-        <h1>Basic Docker</h1>
-        <p class="sub">Uygulamalarını tek tuşla aç, tek tuşla kapat.</p>
-      </div>
-    </div>
-    <div class="top-actions">
-      <span id="docker-pill" class="pill" title="Docker durumu"><span class="dot"></span><span>Bağlanıyor…</span></span>
-      <button id="btn-help" class="btn ghost" type="button"></button>
-      <button id="btn-new" class="btn primary" type="button"></button>
-    </div>
+  <a class="skip-link" href="#main">İçeriğe geç</a>
+
+  <header class="mobile-bar">
+    <button class="icon-btn" data-sb-toggle aria-label="Menüyü aç">
+      <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+    </button>
+    <span class="brand-name">Basic Docker</span>
+    <button class="icon-btn" data-global="palette" aria-label="Ara (⌘K)">
+      <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7.5"/><path d="m21 21-4.3-4.3"/></svg>
+    </button>
   </header>
 
-  <main>
-    <section id="intro" class="intro" hidden>
-      <div>
-        <h2>Nasıl çalışır?</h2>
-        <p>Her kart bir <b>uygulama</b>. Bir uygulama, birlikte çalışan birkaç <b>parçadan</b> (konteyner) oluşur.
-          Örneğin bir web sitesi = site + veritabanı + e-posta kutusu. <b>Başlat</b>'a basınca hepsi birlikte açılır,
-          <b>Durdur</b>'a basınca hepsi kapanır. Parçaları görmek için karta tıkla.</p>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar" aria-label="Ana menü">
+      <div class="sb-brand">
+        <div class="logo" aria-hidden="true">
+          <svg viewBox="0 0 32 32"><rect x="7" y="15" width="8" height="8" rx="1.5"/><rect x="17" y="15" width="8" height="8" rx="1.5"/><rect x="12" y="6" width="8" height="8" rx="1.5" opacity=".7"/></svg>
+        </div>
+        <div class="sb-label brand-text"><b>Basic Docker</b><small>Docker'ı sade yönet</small></div>
       </div>
-      <button id="intro-close" class="icon-btn" type="button" aria-label="Kapat"></button>
-    </section>
+      <button class="sb-search" data-global="palette" title="Her yerde ara (⌘K)">
+        <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7.5"/><path d="m21 21-4.3-4.3"/></svg>
+        <span class="sb-label">Her yerde ara</span>
+        <span class="sb-label kbd-group"><kbd>⌘</kbd><kbd>K</kbd></span>
+      </button>
+      <nav class="sb-nav" id="sb-nav"></nav>
+      <div class="sb-foot" id="sb-foot"></div>
+    </aside>
+    <div class="sb-scrim" id="sb-scrim"></div>
 
-    <div class="toolbar">
-      <div id="summary" class="summary"></div>
-      <label class="search">
-        <span class="sr">Ara</span>
-        <input id="search" type="search" placeholder="Uygulama ara…" autocomplete="off">
-      </label>
-    </div>
+    <main class="main" id="main" tabindex="-1"></main>
+    <div class="engine-screen" id="engine-screen" hidden></div>
+  </div>
 
-    <div id="apps" class="grid" aria-live="polite"></div>
-    <div id="state-screen" class="state-screen" hidden></div>
-  </main>
-
-  <div id="scrim" class="scrim" hidden></div>
-  <aside id="drawer" class="drawer" aria-hidden="true" tabindex="-1"></aside>
-
-  <dialog id="modal" class="modal"><div id="modal-body"></div></dialog>
-
+  <dialog id="modal" class="modal"></dialog>
   <div id="toasts" class="toasts" aria-live="polite"></div>
 
-  <script src="app.js"></script>
+  <script src="js/core.js"></script>
+  <script src="js/components.js"></script>
+  <script src="js/views/apps.js"></script>
+  <script src="js/views/app.js"></script>
+  <script src="js/views/container.js"></script>
+  <script src="js/views/containers.js"></script>
+  <script src="js/views/images.js"></script>
+  <script src="js/views/volumes.js"></script>
+  <script src="js/views/networks.js"></script>
+  <script src="js/views/ports.js"></script>
+  <script src="js/views/cleanup.js"></script>
+  <script src="js/views/activity.js"></script>
+  <script src="js/views/system.js"></script>
+  <script src="js/dialogs.js"></script>
+  <script src="js/palette.js"></script>
+  <script src="js/main.js"></script>
 </body>
 </html>

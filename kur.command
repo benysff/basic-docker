@@ -10,9 +10,10 @@ if ! command -v python3 >/dev/null 2>&1; then
   echo "✗ Python 3 bulunamadı. Terminalde şunu çalıştır, sonra tekrar dene:  xcode-select --install"
   exit 1
 fi
-if ! command -v docker >/dev/null 2>&1 && [ ! -x /usr/local/bin/docker ]; then
-  echo "! Docker bulunamadı. Uygulama açılır ama önce Docker Desktop'ı kurman gerekecek:"
-  echo "  https://www.docker.com/products/docker-desktop/"
+if ! command -v docker >/dev/null 2>&1 && [ ! -x /usr/local/bin/docker ] && [ ! -x "$HOME/.orbstack/bin/docker" ]; then
+  echo "! Docker bulunamadı. Uygulama açılır ama önce bir Docker motoru kurman gerekecek:"
+  echo "  OrbStack (Mac için en hafifi): https://orbstack.dev"
+  echo "  Docker Desktop:                https://www.docker.com/products/docker-desktop/"
 fi
 
 [ -x .venv/bin/python ] || python3 -m venv .venv
