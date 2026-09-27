@@ -11,6 +11,7 @@ const AppView = {
     this.tab = params.tab || "parcalar";
     this.logState = { query: "", follow: true, lines: 300, rows: [], loading: false };
     this.compose = null;
+    this.token = {};  // başka uygulamaya geçildikten sonra gelen eski cevaplar yok sayılır
     root.innerHTML = String(html`<div class="page" id="app-page"><div id="app-head"></div><div id="app-tabs"></div><div id="app-body"></div></div>`);
     root.addEventListener("click", this.onClick = (e) => this.click(e));
     root.addEventListener("input", this.onInput = (e) => this.input(e));
@@ -131,9 +132,12 @@ const AppView = {
   // ---------- veri
   async loadLogs(force = false) {
     if (this.logState.loading) return;
-    this.logState.loading = true;
+    const token = this.token;
+    const state = this.logState;
+    state.loading = true;
     try {
       const r = await api(`/api/uygulama/kayitlar${q({ key: this.key, satir: this.logState.lines })}`);
+      if (token !== this.token) { state.loading = false; return; }
       this.logState.rows = r.satirlar || [];
       this.logState.error = null;
     } catch (err) { this.logState.error = err.message; }
@@ -142,9 +146,13 @@ const AppView = {
   },
 
   async loadCompose() {
+    const token = this.token;
+    let compose;
     try {
-      this.compose = (await api(`/api/uygulama/compose${q({ key: this.key })}`)).dosyalar;
-    } catch (err) { this.compose = { error: err.message }; }
+      compose = (await api(`/api/uygulama/compose${q({ key: this.key })}`)).dosyalar;
+    } catch (err) { compose = { error: err.message }; }
+    if (token !== this.token) return;
+    this.compose = compose;
     this.render();
   },
 
@@ -237,8 +245,8 @@ const AppView = {
             <h3 class="panel-title">${L("Bilgiler", "Info")}</h3>
             ${kv([
               [L("Türü", "Type"), sourceText(a.source)],
-              a.compose?.dir && [L("Proje klasörü", "Project folder"), html`<button class="link mono" data-folder title="${L("Finder'da aç", "Open in Finder")}">${a.compose.dir}</button>`],
-              a.compose?.files?.length && [L("Compose dosyası", "Compose file"), html`<span class="mono">${a.compose.files.map((f) => f.split("/").pop()).join(", ")}</span>`],
+              a.compose?.dir && [L("Proje klasörü", "Project folder"), html`<button class="link mono" data-folder title="${openInFiles()}">${a.compose.dir}</button>`],
+              a.compose?.files?.length && [L("Compose dosyası", "Compose file"), html`<span class="mono">${a.compose.files.map((f) => f.split(/[\\/]/).pop()).join(", ")}</span>`],
               [L("Asıl adı", "Real name"), html`<span class="mono">${a.default_name}</span>`],
             ])}
           </section>
@@ -356,9 +364,9 @@ const AppView = {
     const st = this.logState;
     if (st.error) { view.textContent = st.error; return; }
     const atBottom = view.scrollTop + view.clientHeight >= view.scrollHeight - 40;
-    const qq = st.query.trim().toLocaleLowerCase("tr");
+    const qq = fold(st.query.trim());
     const srcs = [...new Set(st.rows.map((r) => r.src))];
-    const rows = qq ? st.rows.filter((r) => (r.src + " " + r.line).toLocaleLowerCase("tr").includes(qq)) : st.rows;
+    const rows = qq ? st.rows.filter((r) => fold(r.src + " " + r.line).includes(qq)) : st.rows;
     if (!rows.length) {
       view.textContent = st.loading ? L("Yükleniyor…", "Loading…") : qq ? L("Aramaya uyan satır yok.", "No lines match your search.") : L("(Henüz kayıt yok.)", "(No logs yet.)");
       return;
@@ -407,13 +415,13 @@ function containerMenuItems(c, app) {
     c.up && { label: L("Yeniden başlat", "Restart"), icon: "restart", onClick: () => containerAction(c.id, "yeniden") },
     c.running && c.state !== "paused" && { label: L("Duraklat", "Pause"), icon: "pause", onClick: () => containerAction(c.id, "duraklat") },
     c.state === "paused" && { label: L("Devam ettir", "Resume"), icon: "play", onClick: () => containerAction(c.id, "devam") },
-    c.running && { label: L("Terminal (içine gir)", "Terminal (open a shell)"), icon: "terminal", onClick: () => Router.go(`/parca/${encodeURIComponent(c.id)}/terminal`) },
-    c.running && S.data?.platform?.mac && { label: L("macOS Terminal'de aç", "Open in macOS Terminal"), icon: "external", onClick: () => containerAction(c.id, "terminal") },
-    db && c.running && { label: L("Veritabanı dökümü al", "Take a database dump"), icon: "backup", onClick: () => runJob("/api/db/dokum", { id: c.id }, () => bus.emit("backups-changed")) },
-    db && c.running && { label: L("Dökümden geri yükle…", "Restore from a dump…"), icon: "upload", onClick: () => openRestoreDbPicker(c) },
+    c.running && { label: L("Terminal (içine gir)", "Terminal (open a shell)"), icon: "terminal", unsafe: true, onClick: () => Router.go(`/parca/${encodeURIComponent(c.id)}/terminal`) },
+    c.running && S.data?.platform?.mac && { label: L("macOS Terminal'de aç", "Open in macOS Terminal"), icon: "external", unsafe: true, onClick: () => containerAction(c.id, "terminal") },
+    db && c.running && { label: L("Veritabanı dökümü al", "Take a database dump"), icon: "backup", unsafe: true, onClick: () => runJob("/api/db/dokum", { id: c.id }, () => bus.emit("backups-changed")) },
+    db && c.running && { label: L("Dökümden geri yükle…", "Restore from a dump…"), icon: "upload", unsafe: true, onClick: () => openRestoreDbPicker(c) },
     "-",
     (c.source === "single" || c.source === "manual") && { label: c.source === "single" ? L("Bir uygulamaya ekle", "Add to an app") : L("Grubunu değiştir", "Change its group"), icon: "move", onClick: () => openMove(c) },
-    { label: L("Yeniden başlama kuralı…", "Restart policy…"), icon: "sliders", onClick: () => openRestartPolicy(c) },
+    { label: L("Yeniden başlama kuralı…", "Restart policy…"), icon: "sliders", unsafe: true, onClick: () => openRestartPolicy(c) },
     c.up && c.state !== "paused" && { label: L("Zorla kapat", "Kill"), icon: "zap", onClick: () => containerAction(c.id, "oldur") },
     "-",
     { label: L("Sil…", "Delete…"), icon: "trash", danger: true, onClick: () => confirmDeleteContainer(c) },

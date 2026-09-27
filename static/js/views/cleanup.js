@@ -228,10 +228,13 @@ const CleanupView = {
       })}`);
 
     const sel = this.selectedSize();
+    // Boyutu 0 olan seçimler (boş kutular, kapalı parçalar) de temizlenebilsin: düğme seçim sayısına bakar.
+    const count = (this.sel.cache ? 1 : 0) + (this.sel.dangling ? 1 : 0) + this.sel.images.size + this.sel.stopped.size + this.sel.volumes.size;
+    const blocked = safeModeOn();
     patch(foot, html`
       <div class="sticky-foot">
-        <div><div class="muted small">${L("Seçilenlerle açılacak yer", "Space freed by the selection")}</div><div class="sticky-size mono">${fmt.bytes(sel)}</div></div>
-        <button class="btn ${this.sel.volumes.size ? "danger-solid" : "primary"} lg" data-run ${sel ? "" : raw("disabled")}>${icon("sparkles")}${L("Temizle", "Clean up")}</button>
+        <div><div class="muted small">${blocked ? L("Güvenli mod: bu sunucuda temizlik kapalı", "Safe mode: cleanup is off on this server") : L("Seçilenlerle açılacak yer", "Space freed by the selection")}</div><div class="sticky-size mono">${fmt.bytes(sel)}</div></div>
+        <button class="btn ${this.sel.volumes.size ? "danger-solid" : "primary"} lg" data-run ${count && !blocked ? "" : raw("disabled")}>${icon("sparkles")}${L("Temizle", "Clean up")}</button>
       </div>`);
   },
 };

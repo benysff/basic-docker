@@ -46,6 +46,16 @@ class TermSession {
     this.term.loadAddon(this.fitter);
     this.term.open(this.el);
     this.term.onData((d) => this.input(d));
+    // Windows/Linux'ta Ctrl+C terminale "durdur" (^C), Ctrl+V de ^V gönderir; kopyala/yapıştır Ctrl+Shift+C/V ile.
+    if (!onMac()) {
+      this.term.attachCustomKeyEventHandler((e) => {
+        if (e.type !== "keydown" || !e.ctrlKey || !e.shiftKey || e.altKey) return true;
+        const k = e.key.toLowerCase();
+        if (k === "c") { const sel = this.term.getSelection(); if (sel) copyText(sel); return false; }
+        if (k === "v") { this.pasteFromClipboard(); return false; }
+        return true;
+      });
+    }
     this.term.onResize(({ cols, rows }) => {
       if (this.sid && this.state === "acik") api("/api/terminal/boyut", { sid: this.sid, cols, rows }).catch(() => {});
     });
@@ -67,18 +77,32 @@ class TermSession {
   }
 
   async connect() {
+    const attempt = (this.attempt = (this.attempt || 0) + 1);
     this.setState("baglaniyor", { error: "", exitCode: null });
     this.fitSoon();
     try {
       const r = await api("/api/terminal/ac", { id: this.cid, cols: this.term.cols, rows: this.term.rows, kullanici: this.user });
+      if (this.disposed || attempt !== this.attempt) {
+        // Bağlanırken kapatıldı ya da yeniden bağlanıldı: geç gelen oturum sunucuda açık kalmasın.
+        api("/api/terminal/kapat", { sid: r.sid }).catch(() => {});
+        return;
+      }
       this.sid = r.sid;
       this.setState("acik");
       this.readLoop(r.sid);
       if (this.pending) this.flush();
     } catch (e) {
+      if (this.disposed || attempt !== this.attempt) return;
       this.setState("hata", { error: e.message });
       this.term.write(`\r\n\x1b[31m${e.message}\x1b[0m\r\n`);
     }
+  }
+
+  pasteFromClipboard() {
+    navigator.clipboard?.readText?.()
+      .then((t) => { if (t) this.input(t); })
+      .catch(() => flash(L("Pano okunamadı; sağ tıklayıp Yapıştır'ı ya da Shift+Insert'i kullan.",
+        "Couldn't read the clipboard; right-click and choose Paste, or use Shift+Insert."), true));
   }
 
   async readLoop(sid) {
@@ -160,6 +184,7 @@ class TermSession {
   }
 
   dispose() {
+    this.disposed = true;
     const old = this.sid;
     this.sid = null;
     if (old) api("/api/terminal/kapat", { sid: old }).catch(() => {});
@@ -188,5 +213,9 @@ const TermHub = {
   close(cid) {
     const s = this.sessions.get(cid);
     if (s) { s.dispose(); this.sessions.delete(cid); }
+  },
+
+  closeAll() {
+    for (const cid of [...this.sessions.keys()]) this.close(cid);
   },
 };

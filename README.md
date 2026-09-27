@@ -73,10 +73,11 @@ Arayüz **Türkçe ve İngilizce**; dili Sistem sayfasından ya da ⌘K → "Swi
 |---|---|
 | Mac (M1/M2/M3/M4…) | `Basic-Docker-macOS-AppleSilicon.zip` |
 | Mac (Intel) | `Basic-Docker-macOS-Intel.zip` |
-| Windows 10/11 (deneysel) | `Basic-Docker-Windows.zip` |
+| Windows 10/11 (deneysel) | `Basic-Docker-Windows-Kurulum.exe` |
 
 Python gerekmez; her şey paketin içinde. Uygulama imzalı olmadığı için Mac ilk açılışta uyarır:
-Sistem Ayarları → Gizlilik ve Güvenlik → **Yine de Aç**. Windows'ta SmartScreen uyarırsa **Ek bilgi → Yine de çalıştır**.
+Sistem Ayarları → Gizlilik ve Güvenlik → **Yine de Aç**. Windows'ta kurulum dosyasını çalıştırman yeterli: yönetici izni istemeden
+kullanıcı klasörüne (`AppData`) kurulur, Başlat menüsüne eklenir. SmartScreen uyarırsa **Ek bilgi → Yine de çalıştır**.
 
 ### Kaynaktan kur (Mac)
 
@@ -170,7 +171,7 @@ etkinlik geçmişi `~/.basic-docker/etkinlik.jsonl` dosyasında durur.
 - Arayüz metinleri iki dilde yazılır: JavaScript'te `L("Türkçe", "English")`, Python'da `ds.L("Türkçe", "English")`.
   Hazır parçaların İngilizcesi `catalog.py`'de `_en` ile biten alanlarda durur.
 - Yeni sürüm çıkarmak: `app.py`'deki `VERSION`'ı ve `.github/SURUM_NOTLARI.md`'yi güncelle, main'e gelince
-  `git tag v2.1.0 && git push origin v2.1.0`. GitHub Actions Mac (Apple Silicon, Intel) ve Windows paketlerini
+  `git tag v2.1.1 && git push origin v2.1.1`. GitHub Actions Mac (Apple Silicon, Intel) ve Windows paketlerini
   derler, dener ve Release sayfasına ekler. PR'larda da derlenir; paketler Actions sayfasında indirilebilir.
 
 ## Lisans

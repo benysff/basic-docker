@@ -34,6 +34,9 @@ const ContainerView = {
     this.diag = null;
     this.log = { raw: "", query: "", errorsOnly: false, ts: false, lines: 500, since: "", follow: true, hints: {}, loading: false };
     this.showEnv = new Set();
+    this.termStopped = false;  // başka bir parçada "oturumu kapat" denmesi burada sürmesin
+    // Bu nesne sayfalar arasında yeniden kullanılır: A'nın geç gelen cevabı B'nin sayfasına yazılmasın.
+    this.token = {};
     root.innerHTML = String(html`<div class="page"><div id="c-head"></div><div id="c-diag"></div><div id="c-tabs"></div><div id="c-body"></div></div>`);
     root.addEventListener("click", this.onClick = (e) => this.click(e));
     root.addEventListener("input", this.onInput = (e) => this.input(e));
@@ -100,24 +103,32 @@ const ContainerView = {
   async loadDetail() {
     const f = this.found;
     if (!f) return;
+    const token = this.token;
+    let detail;
     try {
-      this.detail = (await api(`/api/parca/detay${q({ id: f.c.id })}`)).detay;
-    } catch (e) { this.detail = { error: e.message }; }
+      detail = (await api(`/api/parca/detay${q({ id: f.c.id })}`)).detay;
+    } catch (e) { detail = { error: e.message }; }
+    if (token !== this.token) return;
+    this.detail = detail;
     const c = this.found?.c;
+    let diag = null;
     if (c && (c.level === "err" || c.state === "restarting" || c.health === "unhealthy" || (!c.running && c.exit_code))) {
-      try { this.diag = (await api(`/api/parca/teshis${q({ id: c.id })}`)).teshis; } catch { this.diag = null; }
-    } else {
-      this.diag = null;
+      try { diag = (await api(`/api/parca/teshis${q({ id: c.id })}`)).teshis; } catch { diag = null; }
     }
+    if (token !== this.token) return;
+    this.diag = diag;
     this.render();
   },
 
   async loadLogs(force = false) {
     const f = this.found;
     if (!f || this.log.loading) return;
-    this.log.loading = true;
+    const token = this.token;
+    const log = this.log;
+    log.loading = true;
     try {
       const r = await api(`/api/kayitlar${q({ id: f.c.id, satir: this.log.lines, zaman: this.log.ts ? 1 : "", since: this.log.since })}`);
+      if (token !== this.token) { log.loading = false; return; }  // başka parçaya geçilmiş
       const changed = r.metin !== this.log.raw;
       this.log.raw = r.metin;
       this.log.error = null;
@@ -345,11 +356,11 @@ const ContainerView = {
           ${c.ports.length ? html`<ul class="plain-list">${c.ports.map((p) => html`
             <li class="port-li">
               <span class="port-num mono">${p.host}</span>${icon("arrowRight", "muted")}<span class="mono muted">${L(`içeride ${p.container}/${p.proto}`, `${p.container}/${p.proto} inside`)}</span>
-              ${p.local_only ? pill(html`${icon("lock")}${L("Sadece bu Mac", "This Mac only")}`, "ok") : pill(html`${icon("globe")}${L("Ağa açık", "Open to network")}`, "warn")}
+              ${p.local_only ? pill(html`${icon("lock")}${L(onRemoteEngine() ? "Sadece sunucunun kendisi" : `Sadece ${here()}`, onRemoteEngine() ? "Server only" : `${hereEn(true)} only`)}`, "ok") : pill(html`${icon("globe")}${L("Ağa açık", "Open to network")}`, "warn")}
               ${p.url ? linkChip(p.url, L("Aç", "Open"), { dim: !c.running }) : ""}
             </li>`)}</ul>
-            ${c.ports.some((p) => !p.local_only) ? html`<p class="muted small">${isEN() ? html`Other devices on the same Wi-Fi can reach ports that are “open to network”. To allow this Mac only, use <code>127.0.0.1:${c.ports[0].host}:${c.ports[0].container}</code> in the compose file.`
-              : html`“Ağa açık” kapılara aynı Wi-Fi'deki başka cihazlar da ulaşabilir. Sadece bu Mac'ten erişilsin istiyorsan compose dosyasında <code>127.0.0.1:${c.ports[0].host}:${c.ports[0].container}</code> biçimini kullan.`}</p>` : ""}`
+            ${c.ports.some((p) => !p.local_only) ? html`<p class="muted small">${isEN() ? html`Other devices on the same Wi-Fi can reach ports that are “open to network”. To allow ${onRemoteEngine() ? "the server itself" : hereEn()} only, use <code>127.0.0.1:${c.ports[0].host}:${c.ports[0].container}</code> in the compose file.`
+              : html`“Ağa açık” kapılara aynı Wi-Fi'deki başka cihazlar da ulaşabilir. Sadece ${onRemoteEngine() ? "sunucunun kendisinden" : here("ten")} erişilsin istiyorsan compose dosyasında <code>127.0.0.1:${c.ports[0].host}:${c.ports[0].container}</code> biçimini kullan.`}</p>` : ""}`
             : c.internal_ports.length ? html`<p class="muted">${L(`Dışarıya kapı açılmamış. Sadece aynı ağdaki diğer ${Tl("container", true)} içerideki ${c.internal_ports.join(", ")} numarasına ulaşabilir.`, `No published port. Only other containers on the same network can reach ${c.internal_ports.join(", ")} inside.`)}</p>`
               : html`<p class="muted">${L("Bu parça hiçbir kapı dinlemiyor.", "This container doesn't listen on any port.")}</p>`}
         </section>
@@ -568,6 +579,11 @@ const ContainerView = {
   },
 
   termShell(c) {
+    if (safeModeOn()) {
+      return callout({ level: "info", icon: "lock", title: L("Güvenli mod: terminal kapalı", "Safe mode: the terminal is off"),
+        text: L("Bu sunucu güvenli modda. Terminalden her şey silinebildiği için kapalı; kayıtlar ve ayrıntılar açık. Açmak için üstteki şeritten “Tam kontrol”ü aç.",
+          "This server is in safe mode. The terminal is off because anything can be deleted from a shell; logs and details stay available. To allow it, turn on “Full control” from the bar at the top.") });
+    }
     const quick = [...dbQuickCmds(c), ...QUICK_CMDS];
     return html`
       <div class="xterm-wrap">
@@ -580,9 +596,9 @@ const ContainerView = {
       </div>
       <p class="muted small">${isEN()
         ? html`A real terminal inside the container: <code>cd</code>, tab completion, <code>top</code> and <code>vim</code> work.
-          Select + ⌘C to copy, ⌘V to paste. The session survives moving between pages; type <code>exit</code> to leave.`
+          Select + ${onMac() ? "⌘C" : "Ctrl+Shift+C"} to copy, ${onMac() ? "⌘V" : "Ctrl+Shift+V"} to paste. The session survives moving between pages; type <code>exit</code> to leave.`
         : html`Parçanın içinde gerçek bir terminal: <code>cd</code>, sekme tamamlama, <code>top</code>, <code>vim</code> çalışır.
-          Kopyalamak için seç + ⌘C, yapıştırmak için ⌘V. Oturum, sayfalar arasında gezinince kopmaz; çıkmak için <code>exit</code>.`}</p>`;
+          Kopyalamak için seç + ${onMac() ? "⌘C" : "Ctrl+Shift+C"}, yapıştırmak için ${onMac() ? "⌘V" : "Ctrl+Shift+V"}. Oturum, sayfalar arasında gezinince kopmaz; çıkmak için <code>exit</code>.`}</p>`;
   },
 
   renderTermBar() {

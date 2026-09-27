@@ -112,11 +112,13 @@ PATTERNS = [
       "See who uses that number on the Ports page; stop it or give this container a different port.")),
     ("arch", r"exec format error|no matching manifest for linux/arm64|image's platform \(linux/amd64\) does not match", None,
      ("Kalıp bu işlemciye uygun değil",
-      "Kalıp Intel (amd64) işlemciler için hazırlanmış; Mac'in Apple Silicon (arm64). Ya hiç çalışmaz ya da çok yavaş çalışır.",
-      "Kalıbın arm64 sürümünü kullan. Yoksa compose dosyasında servise 'platform: linux/amd64' ekle."),
+      "Kalıp başka bir işlemci türü için hazırlanmış (Intel/amd64 ile ARM/arm64 farkı). Ya hiç çalışmaz ya da çok yavaş çalışır.",
+      "Kalıbın bu işlemciye uygun sürümünü kullan (Kalıplar sayfası kalıbın hangi işlemci için olduğunu gösterir). "
+      "Yoksa compose dosyasında servise 'platform: linux/amd64' (ya da linux/arm64) ekle."),
      ("The image doesn't match this CPU",
-      "The image was built for Intel (amd64) CPUs; your Mac is Apple Silicon (arm64). It won't run, or runs very slowly.",
-      "Use the arm64 version of the image. If there is none, add 'platform: linux/amd64' to the service in compose.")),
+      "The image was built for a different CPU type (Intel/amd64 vs ARM/arm64). It won't run, or runs very slowly.",
+      "Use the version of the image made for this CPU (the Images page shows which CPU an image is for). "
+      "If there is none, add 'platform: linux/amd64' (or linux/arm64) to the service in compose.")),
     ("crlf", r"exec [^\s:]+\.sh: no such file or directory|/bin/sh\^M|\$'\\r': command not found|bad interpreter: No such file", None,
      ("Komut dosyasının satır sonları Windows biçiminde",
       "Başlangıç komut dosyası (.sh) Windows'ta kaydedilmiş; Linux onu okuyamıyor.",

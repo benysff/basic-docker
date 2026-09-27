@@ -34,7 +34,7 @@ import terminal as term
 # Paketlenmiş (PyInstaller) sürümde dosyalar sys._MEIPASS altında durur.
 HERE = getattr(sys, "_MEIPASS", None) or os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(HERE, "static")
-VERSION = "2.1.0"
+VERSION = "2.1.1"
 
 
 def build_html():
@@ -151,9 +151,13 @@ def api_diagnose(p):
         if code == 0 and arch and host and arch != host:
             arch_warning = {
                 "id": "emulated",
-                "title": ds.L(f"Kalıp {arch} işlemci için; Mac'in {host}", f"The image is for {arch}; your Mac is {host}"),
-                "desc": ds.L("Parça emülasyonla (Rosetta/QEMU) çalışıyor. Çalışabilir ama yavaştır; bazı programlar hiç açılmaz.",
-                             "The container runs under emulation (Rosetta/QEMU). It may work but is slow; some programs won't start."),
+                # host_arch, Docker motorunun işlemcisi: uzak sunucudaysak sunucununki.
+                "title": ds.L(f"Kalıp {arch} işlemci için; {'sunucunun' if rm.is_remote() else ds.here('in')} işlemcisi {host}",
+                              f"The image is for {arch}; {'the server' if rm.is_remote() else ds.here_en()} is {host}"),
+                "desc": ds.L(f"Parça emülasyonla ({'Rosetta/QEMU' if ds.IS_MAC and not rm.is_remote() else 'QEMU'}) çalışıyor. "
+                             "Çalışabilir ama yavaştır; bazı programlar hiç açılmaz.",
+                             f"The container runs under emulation ({'Rosetta/QEMU' if ds.IS_MAC and not rm.is_remote() else 'QEMU'}). "
+                             "It may work but is slow; some programs won't start."),
                 "fix": ds.L(f"Kalıbın {host} sürümü varsa onu kullan.", f"Use the {host} version of the image if there is one."),
                 "link": None, "line": "", "line_no": 0,
             }
@@ -221,9 +225,21 @@ def _context_changed():
     """Bağlam değişince: önbellekler, canlı akışlar ve eski sunucuya açılmış tüneller sıfırlanır."""
     _engine_cache["t"] = 0.0
     rm.invalidate()
+    _engine_caches_changed()
+
+
+def _engine_caches_changed():
+    """Motor değişti (uygulama içinden ya da terminalde `docker context use`): ona bağlı her şey sıfırlanır."""
+    _engine_cache["t"] = 0.0
     rm.invalidate_machines()
     rm.close_all()
+    rs._arch_cache.clear()   # uzak sunucunun işlemcisi yerelde "emülasyon" uyarısı göstermesin
+    rs._updates.clear()
+    rs.invalidate_df()
     monitor.reconnect()
+
+
+rm._on_change.append(_engine_caches_changed)
 
 
 def api_use_context(p):
@@ -261,6 +277,10 @@ def api_copy(p):
     if ds.IS_MAC:
         subprocess.run(["pbcopy"], input=text, text=True, encoding="utf-8", check=False)
         return {"tamam": True}
+    if ds.IS_WIN:
+        # clip.exe Türkçe karakterleri UTF-16 (BOM'lu) olarak doğru alır.
+        r = subprocess.run(["clip"], input=text.encode("utf-16"), check=False)
+        return {"tamam": r.returncode == 0}
     return {"tamam": False}  # arayüz kendi yöntemini dener
 
 
@@ -370,28 +390,42 @@ REMOTE_ALLOWED = {
     "/api/baglam", "/api/baglamlar", "/api/baglam/yerel", "/api/baglam/dene", "/api/baglam/sil",
     "/api/uzak/ekle", "/api/uzak/guven", "/api/uzak/anahtar", "/api/uzak/tam-kontrol", "/api/tunel/ac", "/api/tunel/kapat",
     "/api/uygulama", "/api/uygulama/ayar", "/api/uygulama/kayitlar", "/api/uygulama/env", "/api/uygulama/compose",
-    "/api/parca", "/api/parca/tasi", "/api/parcalar/toplu", "/api/parca/detay", "/api/parca/teshis", "/api/parca/komut",
-    "/api/terminal/ac", "/api/terminal/oku", "/api/terminal/yaz", "/api/terminal/boyut", "/api/terminal/kapat",
+    "/api/parca", "/api/parca/tasi", "/api/parcalar/toplu", "/api/parca/detay", "/api/parca/teshis",
+    # terminal/ac ve parca/komut burada değil: güvenli modda kabuk açılamaz (kabuktan her şey silinebilir).
+    # Açık oturumları okumak/kapatmak serbest; oturum açıldığı sunucuya bağlıdır.
+    "/api/terminal/oku", "/api/terminal/yaz", "/api/terminal/boyut", "/api/terminal/kapat",
     "/api/kayitlar", "/api/kayit-ipuclari", "/api/kaliplar", "/api/kalip/detay", "/api/kalip/denetle", "/api/kalip/denetle-hepsi",
     "/api/kutular", "/api/aglar", "/api/kapilar", "/api/kapi-oner", "/api/temizlik",
     "/api/yedekler", "/api/yedek/goster", "/api/yedek-klasoru", "/api/yedek/sil", "/api/compose-bilgi",
     "/api/link-ac", "/api/kopyala", "/api/ayarlar", "/api/ayarlar/kaydet", "/api/klasor-sec", "/api/dosya-sec",
     "/api/klasor-ac", "/api/docker-ac",
 }
-REMOTE_SAFE_ACTIONS = {"baslat", "durdur", "yeniden", "duraklat", "devam", "oldur", "terminal"}
+REMOTE_SAFE_ACTIONS = {"baslat", "durdur", "yeniden", "duraklat", "devam", "oldur"}
 
 
 def _safe_mode_guard(path, params):
-    if not rm.safe_mode_active():
+    state = rm.safe_mode_state()
+    if state == "off":
         return
     blocked = path not in REMOTE_ALLOWED
     if path in ("/api/uygulama", "/api/parca", "/api/parcalar/toplu") and _s(params, "islem") not in REMOTE_SAFE_ACTIONS:
         blocked = True
+    if path == "/api/uygulama" and _s(params, "islem") == "baslat" and not blocked:
+        # Parçası kalmamış bir compose uygulamasında "Başlat" = compose up = sunucuya yeniden kurulum.
+        try:
+            if not ds.get_app(_s(params, "key")).get("containers"):
+                blocked = True
+        except ds.UserError:
+            pass
+    if blocked and state == "unknown":
+        raise ds.UserError(ds.L(
+            "Hangi Docker'a bağlı olunduğu okunamadı; güvenlik için bu işlem yapılmadı. Biraz sonra tekrar dene.",
+            "Couldn't tell which Docker this would run on, so the action was not performed for safety. Try again shortly."))
     if blocked:
         raise ds.UserError(ds.L(
-            "Bu sunucu güvenli modda: silme, kurulum, güncelleme ve temizlik kapalı. "
+            "Bu sunucu güvenli modda: silme, kurulum, güncelleme, temizlik ve terminal kapalı. "
             "Açmak için Sistem → Bağlantılar'dan bu sunucuda “Tam kontrol”ü aç.",
-            "This server is in safe mode: deleting, installing, updating and cleanup are off. "
+            "This server is in safe mode: deleting, installing, updating, cleanup and the terminal are off. "
             "To allow them, turn on “Full control” for this server in System → Connections."))
 
 

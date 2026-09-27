@@ -64,6 +64,9 @@ class Session:
         self.cond = threading.Condition()
         self.last_seen = time.time()
         self.remote_pid = None  # kabuğun konteyner içindeki PID'si
+        # Oturum açıldığı sunucuya bağlı kalır; uygulama sonra başka sunucuya geçse de kapatma komutu
+        # (kill -HUP) yanlış sunucudaki aynı adlı konteynere gitmez.
+        self.env = dict(ds.cur_env())
 
         args = [ds.DOCKER, "exec", "-it", "-e", "TERM=xterm-256color", "-e", "COLORTERM=truecolor"]
         if user:
@@ -74,7 +77,7 @@ class Session:
                 raise ds.UserError(ds.L("Bu kurulumda terminal desteği eksik (pywinpty).",
                                         "Terminal support is missing in this installation (pywinpty)."))
             c, r = _clamp(cols, rows)
-            self.win = PtyProcess.spawn(args, dimensions=(r, c), env=ds.ENV)
+            self.win = PtyProcess.spawn(args, dimensions=(r, c), env=self.env)
             self.proc = self.fd = None
         else:
             self.win = None
@@ -82,7 +85,7 @@ class Session:
             _set_size(slave, cols, rows)
             # subprocess, fork+exec'i C tarafında yapar; çok iş parçacıklı süreçte de güvenlidir.
             self.proc = subprocess.Popen(args, stdin=slave, stdout=slave, stderr=slave,
-                                         start_new_session=True, env=ds.ENV, close_fds=True)
+                                         start_new_session=True, env=self.env, close_fds=True)
             os.close(slave)
             self.fd = master
         threading.Thread(target=self._reader, daemon=True).start()
@@ -186,7 +189,7 @@ class Session:
             try:
                 # kill'i kabuğun kendi komutu olarak çağır: bazı ince kalıplarda ayrı bir kill programı yok.
                 subprocess.run([ds.DOCKER, "exec", self.container, "sh", "-c", f"kill -HUP {int(self.remote_pid)}"],
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=ds.ENV, timeout=5)
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=self.env, timeout=5)
             except (subprocess.TimeoutExpired, OSError):
                 pass
         if self.win:

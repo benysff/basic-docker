@@ -77,6 +77,50 @@ const q = (params) => "?" + Object.entries(params)
 const isEN = () => S.prefs.lang === "en";
 const L = (tr, en) => (isEN() ? en : tr);
 const loc = () => (isEN() ? "en-US" : "tr-TR");
+/** Uygulama hangi bilgisayarda çalışıyor? (veri gelmeden önce tarayıcıdan tahmin edilir) */
+const onMac = () => (S.data?.platform ? !!S.data.platform.mac : /Mac/i.test(navigator.platform || ""));
+const onWin = () => (S.data?.platform ? !!S.data.platform.win : /Win/i.test(navigator.platform || ""));
+const onRemoteEngine = () => !!S.data?.platform?.remote;
+// "Bu Mac" yalnızca Mac'te; Windows/Linux'ta "bu bilgisayar". Türkçe ekler kelimeye göre değiştiği için her biçim ayrı.
+const _HERE = {
+  mac: { "": "bu Mac", te: "bu Mac'te", e: "bu Mac'e", ten: "bu Mac'ten", teki: "bu Mac'teki", in: "bu Mac'in",
+    ine: "Mac'ine", inde: "Mac'inde", indeki: "Mac'indeki", acilinca: "Mac açılınca" },
+  pc: { "": "bu bilgisayar", te: "bu bilgisayarda", e: "bu bilgisayara", ten: "bu bilgisayardan", teki: "bu bilgisayardaki", in: "bu bilgisayarın",
+    ine: "bilgisayarına", inde: "bilgisayarında", indeki: "bilgisayarındaki", acilinca: "bilgisayar açılınca" },
+};
+/** here("te") → "bu Mac'te" / "bu bilgisayarda"; buyuk: cümle başı. */
+function here(form = "", buyuk = false) {
+  const s = _HERE[onMac() ? "mac" : "pc"][form];
+  return buyuk ? s[0].toLocaleUpperCase("tr-TR") + s.slice(1) : s;
+}
+function hereEn(cap = false) {
+  const s = onMac() ? "this Mac" : "this computer";
+  return cap ? s[0].toUpperCase() + s.slice(1) : s;
+}
+const yourPcEn = () => (onMac() ? "your Mac" : "your computer");
+/** "Finder'da aç" / "Gezgin'de aç" / "Klasörü aç" */
+const openInFiles = () => (onMac() ? L("Finder'da aç", "Open in Finder") : onWin() ? L("Gezgin'de aç", "Open in File Explorer") : L("Klasörü aç", "Open folder"));
+const showInFiles = () => (onMac() ? L("Finder'da göster", "Show in Finder") : onWin() ? L("Gezgin'de göster", "Show in File Explorer") : L("Klasörde göster", "Show in folder"));
+/** Yedek silme: Mac'te Çöp Sepeti, Windows'ta Geri Dönüşüm Kutusu, Linux'ta kalıcı silme (backups.py ile aynı). */
+const trashVerb = () => (onMac() ? L("Çöp Sepeti'ne taşı", "Move to Trash") : onWin() ? L("Geri Dönüşüm Kutusu'na taşı", "Move to Recycle Bin")
+  : L("Kalıcı olarak sil", "Delete permanently"));
+/** Kalıbın işlemcisini kiminkiyle karşılaştırıyoruz: uzak motorda sunucununki. */
+const archWho = () => (onRemoteEngine() ? L("Sunucunun işlemcisi", "The server is") : L(`${here("in", true)} işlemcisi`, `${hereEn(true)} is`));
+
+/** Uzak sunucu güvenli modda mı? (silme, kurulum, güncelleme, temizlik ve terminal kapalı) */
+const safeModeOn = () => !!S.data?.platform?.remote?.guvenli;
+/** Güvenli moddayken yıkıcı bir işleme basılırsa: işlemi yapma, sebebini söyle. */
+function safeModeBlocked() {
+  if (!safeModeOn()) return false;
+  flash(L("Bu sunucu güvenli modda: silme, kurulum, güncelleme, temizlik ve terminal kapalı. Üstteki şeritten “Tam kontrol”ü açabilirsin.",
+    "This server is in safe mode: deleting, installing, updating, cleanup and the terminal are off. You can allow “Full control” from the bar at the top."), true);
+  return true;
+}
+
+/** Arama için harf katlama: I, İ ve ı hepsi "i". Türkçe küçük harfe çevirme "INFO"yu "ınfo" yaptığı için
+ *  kayıtlarda "info", "failed" gibi aramalar bulunmuyordu. Uzunluk değişmez (işaretleme yerleri kaymaz). */
+const fold = (s) => String(s ?? "").replace(/[A-ZÇĞİÖŞÜı]/g, (ch) => (ch === "I" || ch === "İ" || ch === "ı" ? "i" : ch.toLowerCase()));
+
 /** Kısayol yazıları: macOS dışında (Windows, Linux) ⌘ yerine Ctrl. */
 const modText = (s) => (S.data?.platform && !S.data.platform.mac ? String(s).replace(/⌘\+?/g, "Ctrl+") : s);
 
@@ -444,7 +488,9 @@ const Modal = {
       </div>`);
     m.setAttribute("aria-labelledby", "modal-title");
     if (!m.open) m.showModal();
-    if (onMount) this.cleanup = onMount(m) || null;
+    // onMount'a <dialog>'un kendisi değil, her açılışta yeniden oluşan kartı ver: eklenen dinleyiciler
+    // pencereyle birlikte gider, bir sonraki pencerede üst üste binmez (Enter iki kez gönderiyordu).
+    if (onMount) this.cleanup = onMount($(".modal-card", m)) || null;
     const first = $("[autofocus]", m) || $(".modal-body input, .modal-body select, .modal-body textarea", m);
     if (first) setTimeout(() => first.focus(), 30);
     return m;
@@ -521,6 +567,10 @@ const Menu = {
   anchor: null,
   open(anchor, items) {
     this.close();
+    // Güvenli moddaki sunucuda yıkıcı işlemler (danger: silme; unsafe: kurulum, güncelleme, terminal…) gösterilmez.
+    const safe = safeModeOn();
+    items = items.filter(Boolean).filter((it) => !(safe && typeof it === "object" && (it.unsafe || it.danger)));
+    items = items.filter((it, i, arr) => it !== "-" || (i > 0 && i < arr.length - 1 && arr[i - 1] !== "-"));
     const el = document.createElement("div");
     el.className = "menu";
     el.setAttribute("role", "menu");

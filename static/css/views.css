@@ -461,6 +461,17 @@ body.remote .main, body.remote .engine-screen { padding-top: 34px; }
 body.remote-safe [data-global="yeni"],
 body.remote-safe .sb-item[href="#/temizlik"],
 body.remote-safe .sb-group:has([data-new-set]) { display: none !important; }
+/* Güvenli modda yıkıcı düğmeler de görünmesin (sunucu da zaten reddeder; boşuna onay penceresi açılmasın) */
+body.remote-safe [data-app-act="guncelle"],
+body.remote-safe [data-add-part],
+body.remote-safe [data-bulk="sil"],
+body.remote-safe [data-cact="terminal"],
+body.remote-safe [data-pull], body.remote-safe [data-im="pull"], body.remote-safe [data-im="run"],
+body.remote-safe [data-im="prune"], body.remote-safe [data-im="sil-grup"],
+body.remote-safe [data-create], body.remote-safe [data-restore-file],
+body.remote-safe [data-vol="backup"], body.remote-safe [data-bk="restore"],
+body.remote-safe [data-net="connect"], body.remote-safe [data-net="delete"], body.remote-safe [data-net="disconnect"],
+body.remote-safe .tab[data-tab="terminal"] { display: none !important; }
 .sb-machine { width: 100%; border: 0; background: transparent; font: inherit; text-align: left; cursor: pointer; }
 .sb-machine .sb-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sb-machine.current { color: var(--text); font-weight: 600; }

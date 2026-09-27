@@ -31,14 +31,14 @@ function appMenuItems(a) {
     "-",
     a.up > 0 && { label: L("Yeniden başlat", "Restart"), icon: "restart", disabled: !!job, onClick: () => appAction(a.key, "yeniden") },
     a.state === "partial" && { label: L("Kapalı olanları da başlat", "Start the stopped ones too"), icon: "play", disabled: !!job, onClick: () => appAction(a.key, "baslat") },
-    compose && { label: L("Güncelle (yeni sürümleri indir)", "Update (pull new versions)"), icon: "update", disabled: !!job, onClick: () => appAction(a.key, "guncelle") },
-    compose && { label: L("Kodu yeniden derle", "Rebuild the code"), icon: "hammer", disabled: !!job, onClick: () => appAction(a.key, "derle") },
+    compose && { label: L("Güncelle (yeni sürümleri indir)", "Update (pull new versions)"), icon: "update", disabled: !!job, unsafe: true, onClick: () => appAction(a.key, "guncelle") },
+    compose && { label: L("Kodu yeniden derle", "Rebuild the code"), icon: "hammer", disabled: !!job, unsafe: true, onClick: () => appAction(a.key, "derle") },
     "-",
     { label: `${T("logs")}`, icon: "logs", onClick: () => Router.go(`/uygulama/${encodeURIComponent(a.key)}/kayitlar`) },
     hasConn && { label: L("Bağlantı bilgilerini .env olarak kopyala", "Copy connection details as .env"), icon: "key", onClick: () => copyAppEnv(a.key) },
     compose && a.compose.dir && { label: L("Proje klasörünü aç", "Open project folder"), icon: "folder", onClick: () => api("/api/klasor-ac", { key: a.key }).catch((e) => flash(e.message, true)) },
-    isGroupApp(a) && { label: L(`${T("container")} ekle`, "Add a container"), icon: "plus", onClick: () => openNew("sablonlar", { app: a.key }) },
-    { label: L("Bir sete ekle", "Add to a set"), icon: "rocket", onClick: () => openSetEditor(null, [a.key]) },
+    isGroupApp(a) && { label: L(`${T("container")} ekle`, "Add a container"), icon: "plus", unsafe: true, onClick: () => openNew("sablonlar", { app: a.key }) },
+    { label: L("Bir sete ekle", "Add to a set"), icon: "rocket", unsafe: true, onClick: () => openSetEditor(null, [a.key]) },
     "-",
     { label: a.total ? L("Sil…", "Delete…") : L("Listeden kaldır…", "Remove from list…"), icon: "trash", danger: true, disabled: !!job, onClick: () => confirmDeleteApp(a) },
   ];
@@ -77,8 +77,8 @@ function appUsage(a) {
 }
 
 function matchesApp(a, qq) {
-  const hay = [a.name, a.key, a.summary, a.note, ...a.containers.flatMap((c) => [c.name, c.image, c.role_title])]
-    .join(" ").toLocaleLowerCase(loc());
+  const hay = fold([a.name, a.key, a.summary, a.note, ...a.containers.flatMap((c) => [c.name, c.image, c.role_title])]
+    .join(" "));
   return hay.includes(qq);
 }
 
@@ -244,7 +244,7 @@ const AppsView = {
       { id: "sorunlu", label: L("Sorunlu", "Problems"), count: counts.sorunlu },
     ], this.filter));
 
-    const qq = this.query.trim().toLocaleLowerCase(loc());
+    const qq = fold(this.query.trim());
     let list = all;
     if (qq) list = list.filter((a) => matchesApp(a, qq));
     if (this.filter === "calisan") list = list.filter((a) => a.running > 0);

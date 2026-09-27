@@ -98,12 +98,12 @@ async function openNew(step = "secim", ctx = {}) {
             <li>The <b class="mono">${t.image}</b> image is pulled (once, if you don't have it yet).</li>
             <li>A new container named <b>${t.role}</b> is added to the app and started.</li>
             ${t.has_password ? html`<li>A strong password is generated; the connection URL shows up in the app's details.</li>` : ""}
-            <li>${T("port", true)}: ${t.ports.join(" · ")} — a free number is picked automatically, reachable only from this Mac.</li>
+            <li>${T("port", true)}: ${t.ports.join(" · ")} — a free number is picked automatically, reachable only from ${onRemoteEngine() ? "the server" : hereEn()}.</li>
             ${t.has_data ? html`<li>Data is kept in a separate volume, so it survives even if the container is deleted.</li>` : ""}` : html`
             <li><b class="mono">${t.image}</b> kalıbı indirilir (bilgisayarında yoksa, bir kere).</li>
             <li>Uygulamaya <b>${t.role}</b> adında yeni bir parça eklenir ve çalıştırılır.</li>
             ${t.has_password ? html`<li>Güçlü bir şifre otomatik üretilir; bağlantı adresi uygulamanın ayrıntılarında görünür.</li>` : ""}
-            <li>${T("port", true)}: ${t.ports.join(" · ")} — boş bir numara otomatik seçilir, sadece bu Mac'ten erişilir.</li>
+            <li>${T("port", true)}: ${t.ports.join(" · ")} — boş bir numara otomatik seçilir, sadece ${onRemoteEngine() ? "sunucunun kendisinden" : here("ten")} erişilir.</li>
             ${t.has_data ? html`<li>Veriler ayrı bir veri kutusunda saklanır; parça silinse bile kaybolmaz.</li>` : ""}`}
           </ol>
         </div>
@@ -135,7 +135,7 @@ async function openNew(step = "secim", ctx = {}) {
         <div class="field">
           <label for="c-path">${L("Proje klasörü", "Project folder")}</label>
           <div class="input-row">
-            <input id="c-path" placeholder="${L("/Users/sen/Projelerim/sitem", "/Users/you/Projects/my-site")}" autocomplete="off" spellcheck="false">
+            <input id="c-path" placeholder="${onWin() ? L("C:\\Users\\sen\\Projelerim\\sitem", "C:\\Users\\you\\Projects\\my-site") : L("/Users/sen/Projelerim/sitem", "/Users/you/Projects/my-site")}" autocomplete="off" spellcheck="false">
             ${mac ? html`<button class="btn" id="c-pick">${icon("folder")}${L("Seç…", "Choose…")}</button>` : ""}
           </div>
           <div class="help">${mac ? L("“Seç…” ile klasörü bul ya da yolunu buraya yapıştırıp Enter'a bas.", "Find the folder with “Choose…” or paste its path here and press Enter.") : L("Klasörün tam yolunu yapıştır.", "Paste the full path of the folder.")}</div>
@@ -551,14 +551,14 @@ async function openRestoreDbPicker(c) {
 // ---------- Yeniden başlama kuralı ---------------------------------------------------
 async function openRestartPolicy(c) {
   const opts = isEN() ? {
-    no: ["Never", "Stays stopped unless you start it. Doesn't start when the Mac boots either."],
+    no: ["Never", `Stays stopped unless you start it. Doesn't start when ${onMac() ? "the Mac" : "the computer"} boots either.`],
     "on-failure": ["Only if it exits with an error", "Docker retries if it crashes; stays stopped if you stop it."],
-    "unless-stopped": ["Always (unless you stopped it)", "Starts by itself when Docker/the Mac starts. Stays stopped if you stopped it. Best in most cases."],
+    "unless-stopped": ["Always (unless you stopped it)", `Starts by itself when Docker/${onMac() ? "the Mac" : "the computer"} starts. Stays stopped if you stopped it. Best in most cases.`],
     always: ["Always", "Restarted no matter what."],
   } : {
-    no: ["Hiçbir zaman", "Sen başlatmadıkça kapalı kalır. Mac açılınca da başlamaz."],
+    no: ["Hiçbir zaman", `Sen başlatmadıkça kapalı kalır. ${here("acilinca", true)} da başlamaz.`],
     "on-failure": ["Sadece hata verip kapanırsa", "Çökerse Docker tekrar dener; sen durdurursan kapalı kalır."],
-    "unless-stopped": ["Her zaman (sen durdurmadıysan)", "Docker/Mac açılınca kendiliğinden başlar. Sen durdurduysan kapalı kalır. Çoğu durumda en iyisi."],
+    "unless-stopped": ["Her zaman (sen durdurmadıysan)", `Docker/${here("acilinca")} kendiliğinden başlar. Sen durdurduysan kapalı kalır. Çoğu durumda en iyisi.`],
     always: ["Her zaman", "Ne olursa olsun tekrar başlatılır."],
   };
   Modal.open({
@@ -688,8 +688,8 @@ function openAddRemote(after) {
                 "Your computer doesn't know this server's identity yet. If the fingerprint below matches what your hosting panel shows (or “ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub” on the server), it's safe to continue.") })}
               <div class="fp-list">${step.prints.map((f) => html`<div class="fp"><span class="muted small">${f.tur}</span><code>${f.iz}</code></div>`)}</div>`
           : html`${callout({ level: "info", title: L("Tek seferlik kurulum: SSH anahtarı", "One-time setup: SSH key"),
-              text: L(`Bu sunucuya henüz şifresiz giremiyorsun. Sunucu parolanı bir kez yaz; ${step.hasKey ? "Mac'indeki SSH anahtarın" : "senin için yeni bir SSH anahtarı oluşturulup"} sunucuya yüklenir. Parola hiçbir yere kaydedilmez.`,
-                `You can't log in to this server without a password yet. Enter the server password once; ${step.hasKey ? "the SSH key on your Mac" : "a new SSH key is created for you and"} is installed on the server. The password is never saved.`) })}
+              text: L(`Bu sunucuya henüz şifresiz giremiyorsun. Sunucu parolanı bir kez yaz; ${step.hasKey ? `${here("indeki")} SSH anahtarın` : "senin için yeni bir SSH anahtarı oluşturulup"} sunucuya yüklenir. Parola hiçbir yere kaydedilmez.`,
+                `You can't log in to this server without a password yet. Enter the server password once; ${step.hasKey ? `the SSH key on ${yourPcEn()}` : "a new SSH key is created for you and"} is installed on the server. The password is never saved.`) })}
               <div class="field"><label for="rm-pass">${L("Sunucu parolası", "Server password")}</label>
                 <input id="rm-pass" type="password" autocomplete="off" placeholder="${L("Bir kez kullanılır, kaydedilmez", "Used once, never saved")}"></div>`);
         resetGo();
