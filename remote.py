@@ -743,6 +743,16 @@ def trust_host(p):
 def install_key(p, password):
     """SSH anahtarını sunucuya yükler. Parola sadece bu işlem için kullanılır, hiçbir yere kaydedilmez."""
     user, host, port = parse_target(p)
+    if ds.IS_WIN:
+        # Windows'un OpenSSH'ında ssh-copy-id ve sh ile çalışan parola yardımcısı yok.
+        target = f"{user}@{host}" if user else host
+        raise UserError(L(
+            "Windows'ta parolayla anahtar kurulumu yapılamıyor. PowerShell'de bir kez şunu çalıştır (anahtarın yoksa önce "
+            f"ssh-keygen -t ed25519): type $env:USERPROFILE\\.ssh\\id_ed25519.pub | ssh {target} "
+            "\"mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys\" — sonra tekrar bağlan.",
+            "Setting up the key with a password isn't available on Windows. Run this once in PowerShell (if you have no key, "
+            f"first run ssh-keygen -t ed25519): type $env:USERPROFILE\\.ssh\\id_ed25519.pub | ssh {target} "
+            "\"mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys\" — then connect again."))
     if not password:
         raise UserError(L("Parolayı yaz.", "Enter the password."))
     key = os.path.expanduser("~/.ssh/id_ed25519")

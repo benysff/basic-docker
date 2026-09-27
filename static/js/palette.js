@@ -17,7 +17,7 @@ const Palette = {
   build() {
     const out = [];
     const G = this.groups();
-    for (const n of NAV) out.push({ group: G.pages, icon: n.icon, label: n.label(), hint: n.key ? `⌘${n.key}` : "", run: () => Router.go(n.path) });
+    for (const n of NAV) out.push({ group: G.pages, icon: n.icon, label: n.label(), hint: n.key ? modText(`⌘${n.key}`) : "", run: () => Router.go(n.path) });
     for (const a of apps().filter((x) => x.source !== "system")) {
       out.push({ group: T("app", true), icon: "grid", label: a.name, sub: a.state_text, level: LEVEL_OF_APP[a.state], run: () => Router.go(`/uygulama/${encodeURIComponent(a.key)}`) });
       if (a.total || a.compose?.exists) {
@@ -35,7 +35,7 @@ const Palette = {
       out.push({ group: T("logs"), icon: "logs", label: L(`${c.name} kayıtları`, `${c.name} logs`), run: () => Router.go(`/parca/${encodeURIComponent(c.id)}/kayitlar`) });
     }
     const cmds = [
-      ["plus", L("Yeni ekle", "Add new"), () => openNew(), "⌘N"],
+      ["plus", L("Yeni ekle", "Add new"), () => openNew(), modText("⌘N")],
       ["db", L("Hazır veritabanı kur", "Set up a ready-made database"), () => openNew("sablonlar")],
       ["folder", L("Proje klasöründen kur (docker-compose)", "Set up from a project folder (docker-compose)"), () => openNew("compose")],
       ["download", L(`${T("image")} indir`, "Pull an image"), () => openPull()],

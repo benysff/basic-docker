@@ -62,9 +62,11 @@ function applyLanguage() {
   for (const [sel, attr, tr, en] of STATIC_TEXT) {
     const el = $(sel);
     if (!el) continue;
-    if (attr === "text") el.textContent = L(tr, en);
-    else el.setAttribute(attr, L(tr, en));
+    if (attr === "text") el.textContent = modText(L(tr, en));
+    else el.setAttribute(attr, modText(L(tr, en)));
   }
+  const cmd = $(".sb-search .kbd-group kbd");
+  if (cmd) cmd.textContent = modText("⌘").replace("+", "");
 }
 
 async function setLanguage(lang) {
@@ -106,7 +108,7 @@ function renderSidebar() {
     g.items.push(n);
   }
   const item = (n) => html`
-    <a class="sb-item ${activeNav === n.id ? "active" : ""}" href="#${n.path}" ${activeNav === n.id ? raw('aria-current="page"') : ""} title="${n.label()} (⌘${n.key})">
+    <a class="sb-item ${activeNav === n.id ? "active" : ""}" href="#${n.path}" ${activeNav === n.id ? raw('aria-current="page"') : ""} title="${n.label()} (${modText(`⌘${n.key}`)})">
       ${icon(n.icon)}<span class="sb-label">${n.label()}</span>${navBadge(n.id)}
     </a>`;
   const sets = S.data?.sets || [];
@@ -155,7 +157,7 @@ function renderSidebar() {
     : d.docker.reason === "yok" ? ["err", L("Yüklü değil", "Not installed")] : ["err", L("Kapalı", "Stopped")];
   patch($("#sb-foot"), html`
     ${running.length ? html`<button class="sb-jobs" data-jobs>${raw('<span class="spinner sm"></span>')}<span class="sb-label">${L(`${running.length} işlem sürüyor`, `${plural(running.length, "task")} running`)}</span></button>` : ""}
-    <a class="sb-engine ${activeNav === "system" ? "active" : ""}" href="#/sistem" title="${L("Sistem ve ayarlar", "System & settings")} (⌘9)">
+    <a class="sb-engine ${activeNav === "system" ? "active" : ""}" href="#/sistem" title="${L("Sistem ve ayarlar", "System & settings")} (${modText("⌘9")})">
       <span class="sb-engine-icon">${icon("server")}${dot(state[0])}</span>
       <span class="sb-label"><b>${engine}</b><small>${state[1]}</small></span>
       ${icon("sliders", "sb-engine-go")}

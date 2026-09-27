@@ -29,7 +29,7 @@ const ActivityView = {
     root.innerHTML = String(html`
       <div class="page">
         ${pageHead({
-          title: "Etkinlik",
+          title: L("Etkinlik", "Activity"),
           desc: L("Parçaların ne zaman başladığı, durduğu, çöktüğü. Docker bu geçmişi kısa tutar; Basic Docker açıkken olanları kaydeder.",
             "When containers started, stopped or crashed. Docker keeps this history short; Basic Docker records what happens while it is open."),
           actions: html`<label class="switch-inline" title="${L("Bir parça beklenmedik şekilde çökerse macOS bildirimi gönder", "Send a macOS notification if a container crashes unexpectedly")}">
