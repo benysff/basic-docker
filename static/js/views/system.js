@@ -17,6 +17,7 @@ const SHORTCUTS = [
 const SystemView = {
   mount(root) {
     this.root = root;
+    this.offSafety = bus.on("context-safety", () => this.load());
     this.info = null;
     this.prefs = null;
     this.error = null;
@@ -33,6 +34,7 @@ const SystemView = {
   },
 
   unmount() {
+    this.offSafety?.();
     this.root.removeEventListener("click", this.onClick);
     this.root.removeEventListener("change", this.onChange);
   },
@@ -72,10 +74,14 @@ const SystemView = {
     const ctx = t.closest("[data-context]");
     if (ctx) {
       const name = ctx.dataset.context;
+      const isRemote = (this.ctx?.baglamlar || []).some((c) => c.name === name && c.kind !== "local");
       const r = await confirmDialog({
         title: L(`“${name}” bağlamına geçilsin mi?`, `Switch to the “${name}” context?`), confirmText: L("Geç", "Switch"), icon: "server",
-        text: L("Basic Docker ve terminaldeki docker komutu artık bu motora bağlanır. Diğer motordaki parçalar silinmez; geri geçince yine görünür.",
-          "Basic Docker and the docker command in your terminal will connect to this engine. Containers on the other engine are not deleted; they show up again when you switch back."),
+        text: isRemote
+          ? L("Sadece Basic Docker bu sunucuya bağlanır; terminaldeki docker komutu bu Mac'te kalır (yanlışlıkla sunucuda komut çalıştırmazsın). Varsayılan olarak güvenli moddadır.",
+            "Only Basic Docker connects to this server; the docker command in your terminal stays on this Mac (so you can't run something on the server by accident). It starts in safe mode.")
+          : L("Basic Docker ve terminaldeki docker komutu artık bu motora bağlanır. Diğer motordaki parçalar silinmez; geri geçince yine görünür.",
+            "Basic Docker and the docker command in your terminal will connect to this engine. Containers on the other engine are not deleted; they show up again when you switch back."),
       });
       if (!r) return;
       try { await api("/api/baglam", { ad: name }); flash(L(`Artık ${name} kullanılıyor`, `Now using ${name}`)); await afterContextChange(); } catch (err) { flash(err.message, true); }
@@ -207,6 +213,9 @@ const SystemView = {
               </div>
               <div class="row-actions">
                 <button class="btn sm" data-ctx-test="${c.name}" ${tr?.busy ? raw("disabled") : ""}>${icon("activity")}${L("Dene", "Test")}</button>
+                ${c.kind === "local" ? "" : (this.ctx.tam_kontrol || []).includes(c.name)
+                  ? html`<button class="btn sm" data-full-ctl="${c.name}" title="${L("Güvenli moda al", "Back to safe mode")}">${icon("shield")}${L("Tam kontrol", "Full control")}</button>`
+                  : html`<button class="btn sm" data-full-ctl="${c.name}" data-on="1" title="${L("Silme, kurulum ve temizliği aç", "Allow delete, install and cleanup")}">${icon("lock")}${L("Güvenli mod", "Safe mode")}</button>`}
                 ${c.current ? pill(L("Kullanılıyor", "In use"), "ok") : html`<button class="btn sm" data-context="${c.name}">${L("Buna geç", "Switch")}</button>`}
                 ${c.current || c.kind === "local" ? "" : html`<button class="icon-btn sm" data-ctx-del="${c.name}" aria-label="${L("Bağlantıyı sil", "Remove connection")}" title="${L("Bağlantıyı sil", "Remove connection")}">${icon("trash")}</button>`}
               </div>

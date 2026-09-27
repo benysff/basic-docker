@@ -97,7 +97,8 @@ const AppsView = {
           title: T("app", true),
           desc: L("Her kart bir uygulama: birlikte çalışan parçaların grubu. Tek tuşla aç, tek tuşla kapat.",
             "Each card is an app: a group of containers that work together. Start and stop them with one click."),
-          actions: html`<button class="btn primary" data-global="yeni" title="${L("Yeni ekle (⌘N)", "Add new (⌘N)")}">${icon("plus")}${L("Yeni ekle", "Add new")}</button>`,
+          actions: html`<button class="btn" data-global="sunucu-ekle" title="${L("Uzak bir sunucudaki Docker'ı ekle", "Add Docker on a remote server")}">${icon("globe")}${L("Sunucu ekle", "Add server")}</button>
+            <button class="btn primary" data-global="yeni" title="${L("Yeni ekle (⌘N)", "Add new (⌘N)")}">${icon("plus")}${L("Yeni ekle", "Add new")}</button>`,
         })}
         <div id="apps-intro"></div>
         <section class="stat-row" id="apps-stats" aria-label="${L("Özet", "Summary")}"></section>

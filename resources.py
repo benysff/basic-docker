@@ -788,9 +788,12 @@ def system_info():
 def use_context(name):
     if not ds.NAME_RE.match(name or ""):
         raise UserError(L("Geçersiz bağlam adı.", "Invalid context name."))
-    code, _, err = ds.docker("context", "use", name, timeout=15)
-    if code != 0:
-        raise UserError(L("Değiştirilemedi: ", "Could not switch: ") + err.strip()[-200:])
+    import remote as rm  # döngüsel içe aktarmayı önlemek için burada
+    if not rm.set_app_context(name):
+        # Bu Mac'teki motorlar arası geçiş (OrbStack ↔ Docker Desktop): terminal de aynı motoru kullansın.
+        code, _, err = ds.docker("context", "use", name, timeout=15)
+        if code != 0:
+            raise UserError(L("Değiştirilemedi: ", "Could not switch: ") + err.strip()[-200:])
     _arch_cache.clear()
     invalidate_df()
     return name

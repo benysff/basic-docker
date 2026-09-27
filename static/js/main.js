@@ -110,7 +110,24 @@ function renderSidebar() {
       ${icon(n.icon)}<span class="sb-label">${n.label()}</span>${navBadge(n.id)}
     </a>`;
   const sets = S.data?.sets || [];
+  // Makineler: Bu Mac + eklenen uzak sunucular. Tıklayınca o makineye geçilir (sadece uygulama için).
+  const onRemote = !!S.data?.platform?.remote;
+  const machineDot = S.offline ? "err" : S.data?.docker?.ok ? "ok" : "err";
+  const machine = ({ id, label, sub, ic, current }) => html`
+    <button class="sb-item sb-machine ${current ? "current" : ""}" data-machine="${id}" title="${sub}${current ? L(" · şu an burada", " · you are here") : L(" · geçmek için tıkla", " · click to switch")}" ${current ? raw('aria-current="true"') : ""}>
+      ${icon(ic)}<span class="sb-label">${label}</span>${current ? dot(machineDot) : ""}
+    </button>`;
+  const machinesGroup = html`
+    <div class="sb-group sb-machines">
+      <div class="sb-group-title">${L("Makineler", "Machines")}<span class="sb-title-actions">
+        <button class="icon-btn xs sb-add" data-global="sunucu-ekle" aria-label="${L("Sunucu ekle", "Add server")}" title="${L("Sunucu ekle", "Add server")}">${icon("plus")}</button>
+        ${(S.data?.makineler || []).length ? html`<a class="icon-btn xs sb-add" href="#/sistem" aria-label="${L("Bağlantıları yönet", "Manage connections")}" title="${L("Bağlantıları yönet", "Manage connections")}">${icon("sliders")}</a>` : ""}
+      </span></div>
+      ${machine({ id: "", label: L("Bu Mac", "This Mac"), sub: L("Bu bilgisayardaki Docker", "Docker on this computer"), ic: "frontend", current: !onRemote })}
+      ${(S.data?.makineler || []).map((mc) => machine({ id: mc.name, label: mc.desc || mc.name, sub: `${mc.name} · ${mc.host || mc.kind}`, ic: "globe", current: mc.current }))}
+    </div>`;
   patch($("#sb-nav"), html`
+    ${machinesGroup}
     ${groups.map((g) => html`<div class="sb-group"><div class="sb-group-title">${L(...NAV_GROUPS[g.name])}</div>${g.items.map(item)}</div>`)}
     <div class="sb-group">
       <div class="sb-group-title">${L("Çalışma setleri", "Work sets")}
@@ -211,6 +228,7 @@ async function refresh() {
   } catch {
     S.offline = true;
   }
+  renderRemoteBanner();
   renderEngineState();
   renderSidebar();
   renderToasts();
@@ -240,6 +258,7 @@ document.addEventListener("click", async (e) => {
   if (g) {
     const a = g.dataset.global;
     if (a === "yeni") openNew();
+    if (a === "sunucu-ekle") openAddRemote(() => refresh());
     if (a === "help") openHelp();
     if (a === "palette") Palette.open();
     if (a === "docker-ac") {
@@ -251,6 +270,10 @@ document.addEventListener("click", async (e) => {
   }
   const tn = t.closest("[data-tunnel]");
   if (tn) return openTunnel(+tn.dataset.tunnel);
+  const fc = t.closest("[data-full-ctl]");
+  if (fc) return toggleFullControl(fc.dataset.fullCtl, !!fc.dataset.on);
+  const mc = t.closest("[data-machine]");
+  if (mc) return switchMachine(mc.dataset.machine);
   const job = t.closest("[data-job]");
   if (job) return openJob(job.dataset.job);
   const ct = t.closest("[data-close-toast]");
@@ -293,6 +316,63 @@ async function afterContextChange() {
   Router.current = null;
   Router.render();
   refreshBadges();
+}
+
+/** Kenar çubuğundaki "Makineler": "" = Bu Mac, diğerleri uzak bağlam adı. */
+async function switchMachine(name) {
+  const onRemote = S.data?.platform?.remote;
+  if (!name) { if (onRemote) await useLocalDocker(); return; }
+  if (onRemote?.context === name) return;
+  flash(L(`Bağlanılıyor: ${name}…`, `Connecting: ${name}…`));
+  try {
+    await api("/api/baglam", { ad: name });
+    await afterContextChange();
+  } catch (err) { flash(err.message, true); }
+}
+
+/** Uzak sunucudayken üstte kırmızı şerit; güvenli modda bazı işlemler gizlenir. */
+function renderRemoteBanner() {
+  const r = S.data?.platform?.remote;
+  document.body.classList.toggle("remote", !!r);
+  document.body.classList.toggle("remote-safe", !!r?.guvenli);
+  let bar = $("#remote-banner");
+  if (!r) { bar?.remove(); return; }
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "remote-banner";
+    bar.className = "remote-banner";
+    bar.setAttribute("role", "status");
+    document.body.appendChild(bar);
+  }
+  const ok = S.data?.docker?.ok;
+  patch(bar, html`
+    ${icon("globe")}
+    <span><b>${L("Uzak sunucu", "Remote server")}: ${r.context || r.host}</b> <span class="rb-addr">${r.user ? r.user + "@" : ""}${r.host}${r.port ? ":" + r.port : ""}</span></span>
+    <span class="rb-sep">·</span>
+    <span class="rb-mode">${!ok ? L("Bağlantı yok", "Not connected")
+      : r.guvenli ? L("Güvenli mod: silme, kurulum ve temizlik kapalı", "Safe mode: delete, install and cleanup are off")
+      : L("Tam kontrol açık", "Full control is on")}</span>
+    <span class="grow"></span>
+    ${r.context ? html`<button class="rb-btn" data-full-ctl="${r.context}" data-on="${r.guvenli ? "1" : ""}">${icon(r.guvenli ? "lock" : "shield")}${r.guvenli ? L("Tam kontrolü aç…", "Allow full control…") : L("Güvenli moda al", "Back to safe mode")}</button>` : ""}
+    <button class="rb-btn" data-machine="">${icon("frontend")}${L("Bu Mac'e dön", "Back to this Mac")}</button>`);
+}
+
+async function toggleFullControl(name, on) {
+  if (on) {
+    const ok = await confirmDialog({
+      title: L(`“${name}” için tam kontrol açılsın mı?`, `Allow full control for “${name}”?`), icon: "alert", danger: true,
+      confirmText: L("Tam kontrolü aç", "Allow full control"),
+      text: L("Bu sunucuda parça ve veri silme, kurulum, güncelleme ve temizlik işlemleri açılır. Canlı bir sunucuysa dikkatli ol; istediğin zaman güvenli moda dönebilirsin.",
+        "Deleting containers and data, installing, updating and cleanup become available on this server. Be careful if it's a live server; you can go back to safe mode any time."),
+    });
+    if (!ok) return;
+  }
+  try {
+    await api("/api/uzak/tam-kontrol", { ad: name, acik: !!on });
+    flash(on ? L("Tam kontrol açıldı", "Full control is on") : L("Güvenli moda alındı", "Safe mode is on"));
+    await refresh();
+    bus.emit("context-safety");
+  } catch (err) { flash(err.message, true); }
 }
 
 async function useLocalDocker() {

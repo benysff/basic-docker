@@ -92,6 +92,9 @@ def api_state(p):
     snap["jobs"] = ds.recent_jobs()
     kind = _engine()
     remote = rm.remote_info() if kind == "remote" else None
+    if remote:
+        remote["guvenli"] = rm.safe_mode_active()
+    snap["makineler"] = rm.machines()
     snap["platform"] = {"mac": ds.IS_MAC, "engine": kind,
                         "engine_name": (remote["context"] or remote["host"]) if remote else ds.ENGINE_NAMES.get(kind, "Docker"),
                         "remote": remote, "version": VERSION}
@@ -217,6 +220,7 @@ def _context_changed():
     """Bağlam değişince: önbellekler, canlı akışlar ve eski sunucuya açılmış tüneller sıfırlanır."""
     _engine_cache["t"] = 0.0
     rm.invalidate()
+    rm.invalidate_machines()
     rm.close_all()
     monitor.reconnect()
 
@@ -228,13 +232,23 @@ def api_use_context(p):
 
 
 def api_use_local(p):
-    name = rs.use_context(rm.local_context())
+    # Uygulama kendine özel uzak bir bağlamdaysa sadece onu bırak: terminalin bağlamına dokunma.
+    name = ""
+    if rm.clear_app_context():
+        name = rm.global_context_name()
+        if rm.parse_endpoint(rm.context_endpoint(name) or ""):
+            name = ""  # terminal de uzak bir bağlamdaymış; Bu Mac'in motorunu seç
+    if not name:
+        name = rs.use_context(rm.local_context())
     _context_changed()
     return {"ad": name}
 
 
 def api_add_remote(p):
     res = rm.add_remote(p)
+    if res.get("gerekli"):  # önce parmak izi onayı ya da parola adımı
+        return {"sonuc": res}
+    rm.invalidate_machines()
     if p.get("gec"):
         rs.use_context(res["name"])
         _context_changed()
@@ -266,11 +280,15 @@ ROUTES = {
     "/api/etkinlik": lambda p: {"olaylar": monitor.events(days=int(p.get("gun") or 7))},
     "/api/sistem": lambda p: {"sistem": rs.system_info()},
     "/api/baglam": api_use_context,
-    "/api/baglamlar": lambda p: {"baglamlar": rm.list_contexts(), "tuneller": rm.list_tunnels(), "uzak": rm.remote_info()},
+    "/api/baglamlar": lambda p: {"baglamlar": rm.list_contexts(), "tuneller": rm.list_tunnels(), "uzak": rm.remote_info(),
+                                 "tam_kontrol": sorted(rm.safe_mode_names())},
     "/api/baglam/yerel": api_use_local,
     "/api/baglam/dene": lambda p: {"sonuc": rm.test_context(_s(p, "ad"))},
     "/api/baglam/sil": lambda p: {"ad": rm.remove_context(_s(p, "ad"))},
     "/api/uzak/ekle": api_add_remote,
+    "/api/uzak/guven": lambda p: rm.trust_host(p),
+    "/api/uzak/anahtar": lambda p: rm.install_key(p, _s(p, "parola")),
+    "/api/uzak/tam-kontrol": lambda p: rm.set_full_control(_s(p, "ad"), bool(p.get("acik"))),
     "/api/tunel/ac": lambda p: {"tunel": rm.open_tunnel(p.get("kapi"))},
     "/api/tunel/kapat": lambda p: {"tamam": rm.close_tunnel(p.get("kapi"))},
     "/api/docker-ac": lambda p: {"mesaj": ds.start_docker_desktop()},
@@ -345,6 +363,37 @@ ROUTES = {
 }
 
 
+# Güvenli mod: uzak sunucuda (tam kontrol açılmadıysa) sadece izleme ve güvenli kontrol işlemleri.
+REMOTE_ALLOWED = {
+    "/api/durum", "/api/istatistik", "/api/is", "/api/etkinlik", "/api/sistem", "/api/katalog",
+    "/api/baglam", "/api/baglamlar", "/api/baglam/yerel", "/api/baglam/dene", "/api/baglam/sil",
+    "/api/uzak/ekle", "/api/uzak/guven", "/api/uzak/anahtar", "/api/uzak/tam-kontrol", "/api/tunel/ac", "/api/tunel/kapat",
+    "/api/uygulama", "/api/uygulama/ayar", "/api/uygulama/kayitlar", "/api/uygulama/env", "/api/uygulama/compose",
+    "/api/parca", "/api/parca/tasi", "/api/parcalar/toplu", "/api/parca/detay", "/api/parca/teshis", "/api/parca/komut",
+    "/api/terminal/ac", "/api/terminal/oku", "/api/terminal/yaz", "/api/terminal/boyut", "/api/terminal/kapat",
+    "/api/kayitlar", "/api/kayit-ipuclari", "/api/kaliplar", "/api/kalip/detay", "/api/kalip/denetle", "/api/kalip/denetle-hepsi",
+    "/api/kutular", "/api/aglar", "/api/kapilar", "/api/kapi-oner", "/api/temizlik",
+    "/api/yedekler", "/api/yedek/goster", "/api/yedek-klasoru", "/api/yedek/sil", "/api/compose-bilgi",
+    "/api/link-ac", "/api/kopyala", "/api/ayarlar", "/api/ayarlar/kaydet", "/api/klasor-sec", "/api/dosya-sec",
+    "/api/klasor-ac", "/api/docker-ac",
+}
+REMOTE_SAFE_ACTIONS = {"baslat", "durdur", "yeniden", "duraklat", "devam", "oldur", "terminal"}
+
+
+def _safe_mode_guard(path, params):
+    if not rm.safe_mode_active():
+        return
+    blocked = path not in REMOTE_ALLOWED
+    if path in ("/api/uygulama", "/api/parca", "/api/parcalar/toplu") and _s(params, "islem") not in REMOTE_SAFE_ACTIONS:
+        blocked = True
+    if blocked:
+        raise ds.UserError(ds.L(
+            "Bu sunucu güvenli modda: silme, kurulum, güncelleme ve temizlik kapalı. "
+            "Açmak için Sistem → Bağlantılar'dan bu sunucuda “Tam kontrol”ü aç.",
+            "This server is in safe mode: deleting, installing, updating and cleanup are off. "
+            "To allow them, turn on “Full control” for this server in System → Connections."))
+
+
 class Bridge:
     """pywebview bu nesnenin herkese açık metodlarını JavaScript'e açar."""
 
@@ -357,6 +406,7 @@ class Bridge:
         if not route:
             return {"ok": False, "hata": ds.L("Bilinmeyen işlem.", "Unknown action.")}
         try:
+            _safe_mode_guard(parsed.path, params)
             return {"ok": True, "veri": route(params)}
         except ds.UserError as e:
             return {"ok": False, "hata": str(e)}
@@ -391,6 +441,7 @@ def main():
     args = parser.parse_args()
 
     mac_identity()
+    rm.restore_app_context()  # son seçilen uzak sunucu (sadece uygulama için)
     monitor.start()
     rm.kill_orphans()
     # Oturum kapanırken gelen SIGTERM'de de arkada docker süreci kalmasın.

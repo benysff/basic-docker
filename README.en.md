@@ -37,7 +37,7 @@ The interface is available in **English and Turkish**; switch in System settings
 - **Image update check.** Is there a newer version of your images on Docker Hub? Also flags images built for Intel (amd64) that run slowly under emulation on your Mac. Removes many old versions of an image in one go.
 - **English and Turkish.** The whole interface, the diagnosis texts and the template list are available in both languages.
 - **Remote Docker (like VS Code).** Add the Docker on your server, home server or VM over SSH and manage it from here.
-  No password is asked, your SSH key is used, and all commands share a single SSH connection.
+  It uses your SSH key (if needed, your password is asked once to install the key); remote servers start in safe mode, and all commands share a single SSH connection.
   Clicking a remote container's link opens an **SSH tunnel** automatically: a site running on port 3000 on the server
   opens at `localhost:3000` on this Mac. Ports like databases get a one-click tunnel. If it can't connect it tells you why
   (key not authorized, no Docker on the server, user not in the docker group, tunnels disabled…).
@@ -97,10 +97,14 @@ In `~/Documents/Basic Docker Yedekleri` (can be changed on the System page). Vol
 image (`alpine`, ~3 MB) once; it is downloaded if you don't have it.
 
 **How do I connect to Docker on a remote server?**
-System → **Add remote Docker** → enter the server address (`user@server`, an IP or a name from `~/.ssh/config`).
-If `ssh user@server` works in Terminal without a password, you're ready; Docker must be installed on the server and your
-user must be in the `docker` group. The connection is saved as a Docker context, so the `docker` command in your terminal
-sees the same server. To go back, pick the engine on this Mac on the System page.
+Click **Add server** at the top right (or the + next to **Machines** in the sidebar) and enter the server address
+(`user@server`, an IP or a name from `~/.ssh/config`). On the first connection the server's fingerprint is shown for you to confirm.
+If passwordless login isn't set up yet, you're asked for your password **once** and your SSH key is installed on the server;
+the password is never saved. Docker must be installed on the server and your user must be in the `docker` group
+(if not, the app tells you how to fix it). Added servers are listed under **Machines** in the sidebar; click one to switch.
+Switching affects **only Basic Docker**: the `docker` command in your terminal stays on this Mac, so you can't run
+something on the server by accident. Remote servers start in **safe mode** (delete, install, update and cleanup are off);
+you can turn on **Full control** per server. The red bar at the top always shows which server you're on.
 
 **Is it safe?**
 Ports of ready-made containers are only opened to your own computer (`127.0.0.1`); others on the network can't

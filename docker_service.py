@@ -1743,6 +1743,10 @@ def open_terminal(name):
     if not NAME_RE.match(name):
         raise UserError(L("Geçersiz parça adı.", "Invalid container name."))
     command = f"'{DOCKER}' exec -it {name} sh"
+    ctx = ENV.get("DOCKER_CONTEXT", "")
+    if ctx and NAME_RE.match(ctx):
+        # Uygulama uzak sunucudaysa (terminal değil), Terminal'deki docker da aynı sunucuya gitsin.
+        command = f"'{DOCKER}' --context {ctx} exec -it {name} sh"
     subprocess.Popen([
         "osascript",
         "-e", f'tell application "Terminal" to do script "{command}"',

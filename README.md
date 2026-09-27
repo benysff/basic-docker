@@ -38,7 +38,7 @@ Arayüz **Türkçe ve İngilizce**; dili Sistem sayfasından ya da ⌘K → "Swi
 - **Sade dil ↔ teknik terimler.** "Parça, kalıp, veri kutusu" yerine istersen "konteyner, imaj, volume".
 - **Türkçe ve İngilizce.** Bütün arayüz, teşhis açıklamaları ve hazır parça listesi iki dilde.
 - **Uzak Docker (VS Code'daki gibi).** Sunucundaki, ev sunucundaki ya da sanal makinendeki Docker'ı SSH ile ekle,
-  buradan yönet. Şifre sorulmaz, SSH anahtarınla bağlanılır; bütün komutlar tek SSH bağlantısını paylaşır.
+  buradan yönet. SSH anahtarınla bağlanılır (gerekirse parolan bir kez sorulup anahtar kurulur); uzak sunucular güvenli modda açılır; bütün komutlar tek SSH bağlantısını paylaşır.
   Uzak bir parçanın bağlantısına tıklayınca **SSH tüneli** kendiliğinden açılır: sunucuda 3000'de çalışan site bu Mac'te
   `localhost:3000`'de açılır. Veritabanı gibi kapılar için tek tıkla tünel açılır. Bağlanamazsa sebebini söyler
   (anahtar tanımlı değil, sunucuda Docker yok, kullanıcı docker grubunda değil, tünel izni kapalı…).
@@ -97,10 +97,14 @@ işaretlemen gerekir. Proje klasörüne ve kodlarına hiçbir zaman dokunulmaz. 
 bir kere küçük bir yardımcı kalıp (`alpine`, ~3 MB) kullanılır; bilgisayarında yoksa indirilir.
 
 **Uzak bir sunucudaki Docker'a nasıl bağlanırım?**
-Sistem → **Uzak Docker ekle** → sunucunun adresini yaz (`kullanici@sunucu`, bir IP ya da `~/.ssh/config`'teki bir ad).
-Terminal'de `ssh kullanici@sunucu` şifresiz çalışıyorsa hazırsın; sunucuda Docker kurulu, kullanıcın da `docker`
-grubunda olmalı. Bağlantı bir Docker bağlamı (context) olarak kaydedilir, yani terminaldeki `docker` komutu da aynı
-sunucuyu görür. Geri dönmek için Sistem sayfasından bu Mac'teki motoru seç.
+Sağ üstteki (ya da soldaki **Makineler** başlığının yanındaki) **Sunucu ekle** → sunucunun adresini yaz
+(`kullanici@sunucu`, bir IP ya da `~/.ssh/config`'teki bir ad). İlk bağlantıda sunucunun parmak izi gösterilir, onaylarsın.
+Şifresiz giriş henüz kurulu değilse parolan **bir kez** sorulur ve SSH anahtarın sunucuya yüklenir; parola hiçbir yere
+kaydedilmez. Sunucuda Docker kurulu, kullanıcın da `docker` grubunda olmalı (değilse uygulama çözümü söyler).
+Eklenen sunucular solda **Makineler** altında listelenir; tıklayınca o makineye geçersin.
+Sunucuya geçmek **sadece Basic Docker'ı** değiştirir: terminaldeki `docker` komutu bu Mac'te kalır, yanlışlıkla
+sunucuda komut çalıştırmazsın. Uzak sunucular **güvenli modda** açılır (silme, kurulum, güncelleme, temizlik kapalı);
+istersen sunucu başına **Tam kontrol**ü açarsın. Üstteki kırmızı şerit her an hangi sunucuda olduğunu gösterir.
 
 **Güvenli mi?**
 Hazır parçaların kapıları sadece senin bilgisayarına açılır (`127.0.0.1`), ağdaki başkaları erişemez.

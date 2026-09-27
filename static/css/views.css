@@ -438,3 +438,36 @@ html.sb-narrow .sticky-foot { left: calc(var(--sb-narrow) + 50%); transform: tra
 .xterm-host { width: 100%; height: 100%; }
 .xterm-host .xterm-viewport { scrollbar-width: thin; }
 .term-closed { padding: 28px 0; display: grid; gap: 12px; justify-items: start; }
+
+/* ---------- Uzak sunucu: şerit, güvenli mod, Makineler ---------- */
+.remote-banner {
+  position: fixed; top: 0; left: var(--sb-w); right: 0; z-index: 30; height: 34px;
+  display: flex; align-items: center; gap: 8px; padding: 0 12px 0 16px;
+  background: #b42323; color: #fff; font-size: 12.5px; box-shadow: 0 1px 0 rgba(0, 0, 0, .25);
+}
+html.sb-narrow .remote-banner { left: var(--sb-narrow); }
+.remote-banner .i { width: 15px; height: 15px; flex: none; }
+.remote-banner .rb-addr { opacity: .8; font-family: var(--mono); font-size: 11.5px; margin-left: 4px; }
+.remote-banner .rb-sep { opacity: .5; }
+.remote-banner .rb-mode { opacity: .92; }
+.rb-btn {
+  display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, .35); background: rgba(255, 255, 255, .1); color: #fff; font-size: 12px; cursor: pointer;
+}
+.rb-btn:hover { background: rgba(255, 255, 255, .2); }
+.rb-btn .i { width: 13px; height: 13px; }
+body.remote .main, body.remote .engine-screen { padding-top: 34px; }
+/* Güvenli modda kapalı işlemlerin düğmeleri görünmesin */
+body.remote-safe [data-global="yeni"],
+body.remote-safe .sb-item[href="#/temizlik"],
+body.remote-safe .sb-group:has([data-new-set]) { display: none !important; }
+.sb-machine { width: 100%; border: 0; background: transparent; font: inherit; text-align: left; cursor: pointer; }
+.sb-machine .sb-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-machine.current { color: var(--text); font-weight: 600; }
+.sb-machine.current .i { color: var(--accent); }
+body.remote .sb-machine.current .i { color: #ff8a8a; }
+.sb-title-actions { display: inline-flex; gap: 2px; }
+.fp-list { display: grid; gap: 6px; margin-top: 10px; }
+.fp { display: flex; gap: 10px; align-items: baseline; padding: 8px 10px; background: var(--surface-inset); border: 1px solid var(--line); border-radius: var(--r-sm); }
+.fp .muted { width: 70px; flex: none; }
+.fp code { font-family: var(--mono); font-size: 12.5px; word-break: break-all; }

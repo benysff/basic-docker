@@ -306,7 +306,13 @@ def add_remote(p):
     desc = (p.get("aciklama") or "").strip()[:120]
 
     if kind == "ssh":
-        version = _check_ssh(user, host, port)
+        # Önce parmak izi (ilk bağlantıysa) ve anahtar (şifresiz giriş yoksa) adımları.
+        status, info = ssh_preflight(user, host, port)
+        if status == "hostkey":
+            return {"gerekli": "hostkey", "parmak_izi": info}
+        if status == "parola":
+            return {"gerekli": "parola", "anahtar_var": info}
+        version = info
         spec = f"host=ssh://{user + '@' if user else ''}{host}{':' + port if port else ''}"
     else:
         url = f"tcp://{host}:{port or 2376}"
@@ -509,3 +515,267 @@ def open_url(url):
         return url.replace(u.netloc, f"{r['host']}:{u.port}", 1), None
     t = open_tunnel(u.port)
     return url.replace(u.netloc, f"localhost:{t['local']}", 1), t
+
+
+# ---------------------------------------------------------------------------
+# Uygulamaya özel bağlam: uzak sunucuya geçmek terminaldeki docker'ı ETKİLEMEZ
+# ---------------------------------------------------------------------------
+# Uzak bir bağlama geçince global `docker context use` yerine sadece uygulamanın ortamına
+# DOCKER_CONTEXT yazılır. Böylece terminaldeki `docker rm …` yanlışlıkla canlı sunucuya gitmez.
+# (Bu Mac'teki motorlar arası geçiş — OrbStack ↔ Docker Desktop — eskisi gibi global kalır.)
+
+APP_CTX_KEY = "uygulama_baglami"
+
+
+def app_context():
+    """Uygulamaya özel etkin bağlam adı (yoksa "")."""
+    return ds.ENV.get("DOCKER_CONTEXT", "")
+
+
+def _global_context():
+    env = {k: v for k, v in ds.ENV.items() if k != "DOCKER_CONTEXT"}
+    try:
+        p = subprocess.run([ds.DOCKER, "context", "show"], capture_output=True, text=True, timeout=8, env=env)
+        return p.stdout.strip() if p.returncode == 0 else ""
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
+def context_endpoint(name):
+    code, out, _ = ds.docker("context", "inspect", name, "--format", "{{.Endpoints.docker.Host}}", timeout=10)
+    return out.strip() if code == 0 else None
+
+
+def set_app_context(name):
+    """name uzak bir bağlamsa sadece uygulamayı ona geçirir ve True döner; değilse False."""
+    endpoint = context_endpoint(name)
+    if endpoint is None:
+        raise UserError(L("Bağlam bulunamadı.", "Context not found."))
+    if parse_endpoint(endpoint):
+        ds.ENV["DOCKER_CONTEXT"] = name
+        ds.update_settings(lambda s: s.__setitem__(APP_CTX_KEY, name))
+        invalidate()
+        return True
+    clear_app_context()
+    return False
+
+
+def clear_app_context():
+    """Uygulamaya özel bağlamı bırakır; uygulama yine terminalle aynı (global) bağlamı kullanır."""
+    had = bool(ds.ENV.pop("DOCKER_CONTEXT", None))
+    ds.update_settings(lambda s: s.pop(APP_CTX_KEY, None))
+    invalidate()
+    return had
+
+
+def restore_app_context():
+    """Açılışta son seçilen uzak sunucuya dön (bağlam silinmişse unut)."""
+    name = ds.load_settings().get(APP_CTX_KEY) or ""
+    if name and CTX_RE.match(name) and context_endpoint(name) is not None:
+        ds.ENV["DOCKER_CONTEXT"] = name
+    elif name:
+        clear_app_context()
+
+
+def global_context_name():
+    return _global_context()
+
+
+# ---------------------------------------------------------------------------
+# Kenar çubuğu için makine listesi (kısa süre önbellekli; her yenilemede docker context ls çağırmayalım)
+# ---------------------------------------------------------------------------
+
+_machines_cache = {"t": 0.0, "rows": None}
+
+
+def machines():
+    if _machines_cache["rows"] is None or time.time() - _machines_cache["t"] > 15:
+        try:
+            rows = [{"name": c["name"], "host": c["host"], "kind": c["kind"], "desc": c["desc"]}
+                    for c in list_contexts() if c["kind"] != "local"]
+        except UserError:
+            rows = []
+        _machines_cache.update(t=time.time(), rows=rows)
+    current = _current()[1]
+    safe = safe_mode_names()
+    return [{**r, "current": r["name"] == current, "guvenli": r["name"] not in safe} for r in _machines_cache["rows"]]
+
+
+def invalidate_machines():
+    _machines_cache["rows"] = None
+
+
+# ---------------------------------------------------------------------------
+# Güvenli mod: uzak sunucuda varsayılan olarak sadece izleme ve güvenli kontrol.
+# Sunucu başına "tam kontrol" açılabilir (Sistem → Bağlantılar).
+# ---------------------------------------------------------------------------
+
+def safe_mode_names():
+    """Tam kontrol açılmış bağlamlar (listede OLMAYANLAR güvenli moddadır)."""
+    v = ds.load_settings().get("tam_kontrol")
+    return set(v) if isinstance(v, list) else set()
+
+
+def set_full_control(name, enabled):
+    if not CTX_RE.match(name or ""):
+        raise UserError(L("Geçersiz bağlam adı.", "Invalid context name."))
+
+    def apply(s):
+        cur = set(s.get("tam_kontrol") or [])
+        (cur.add if enabled else cur.discard)(name)
+        s["tam_kontrol"] = sorted(cur)
+    ds.update_settings(apply)
+    return {"ad": name, "tam_kontrol": bool(enabled)}
+
+
+def safe_mode_active():
+    r = remote_info()
+    return bool(r) and (r.get("context") or "") not in safe_mode_names()
+
+
+# ---------------------------------------------------------------------------
+# Sunucu eklerken: parmak izi onayı ve parolayla tek seferlik anahtar kurulumu
+# ---------------------------------------------------------------------------
+
+_scanned = {}  # "host:port" -> ssh-keyscan çıktısı (kullanıcının gördüğü ve onayladığı anahtarlar)
+
+
+def parse_target(p):
+    host = (p.get("sunucu") or "").strip()
+    user = (p.get("kullanici") or "").strip()
+    port = str(p.get("kapi") or "").strip()
+    if "@" in host and not user:
+        user, host = host.split("@", 1)
+    if ":" in host and not port and host.count(":") == 1:
+        host, port = host.split(":", 1)
+    if not HOST_RE.match(host):
+        raise UserError(L("Sunucu adresini yaz (ör. sunucu.ornek.com, 192.168.1.20 ya da ~/.ssh/config'teki bir ad).",
+                          "Enter the server address (e.g. server.example.com, 192.168.1.20 or a name from ~/.ssh/config)."))
+    if user and not USER_RE.match(user):
+        raise UserError(L("Geçersiz kullanıcı adı.", "Invalid user name."))
+    if port and (not port.isdigit() or not 1 <= int(port) <= 65535):
+        raise UserError(L("Kapı 1 ile 65535 arasında bir sayı olmalı.", "The port must be a number between 1 and 65535."))
+    return user, host, port
+
+
+def _resolved(user, host, port):
+    """~/.ssh/config'teki takma adları çözer: gerçek adres ve kapı (ssh -G)."""
+    args = [SSH, "-G"] + (["-p", port] if port else []) + [f"{user}@{host}" if user else host]
+    try:
+        out = subprocess.run(args, capture_output=True, text=True, timeout=8, env=ds.ENV).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        out = ""
+    conf = {}
+    for line in out.splitlines():
+        k, _, v = line.partition(" ")
+        conf.setdefault(k.lower(), v.strip())
+    return conf.get("hostname") or host, conf.get("port") or port or "22"
+
+
+def _fingerprints(host, port):
+    try:
+        out = subprocess.run(["ssh-keyscan", "-T", "8", "-p", str(port), host], capture_output=True, text=True,
+                             timeout=15, env=ds.ENV).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        out = ""
+    lines = [ln for ln in out.splitlines() if ln.strip() and not ln.startswith("#")]
+    if not lines:
+        return []
+    _scanned[f"{host}:{port}"] = "\n".join(lines) + "\n"
+    result = []
+    try:
+        fp = subprocess.run(["ssh-keygen", "-lf", "-"], input=_scanned[f"{host}:{port}"], capture_output=True,
+                            text=True, timeout=10, env=ds.ENV).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        fp = ""
+    for line in fp.splitlines():
+        parts = line.split()
+        if len(parts) >= 4:
+            result.append({"tur": parts[-1].strip("()"), "iz": parts[1]})
+    return result
+
+
+def ssh_preflight(user, host, port):
+    """Sunucuya anahtarla girilebiliyor mu? ("tamam", sürüm) | ("hostkey", parmak izleri) | ("parola", anahtar_var).
+
+    Parmak izi bilinmiyorsa sunucuya giriş DENENMEZ (StrictHostKeyChecking=yes, kimlik doğrulamadan önce durur);
+    art arda başarısız denemeler OpenSSH'ın PerSourcePenalties korumasını tetikleyip adresi bir süre engelleyebilir.
+    """
+    args = [SSH, "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=yes",
+            "-o", "ControlMaster=no", "-o", "ControlPath=none"]
+    args += (["-p", port] if port else []) + [f"{user}@{host}" if user else host,
+                                              "docker", "version", "--format", "'{{.Server.Version}}'"]
+    try:
+        p = subprocess.run(args, capture_output=True, text=True, timeout=30, env=ds.ENV, stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        raise UserError(explain("timed out"))
+    version = p.stdout.strip()
+    if p.returncode == 0 and version:
+        return "tamam", version
+    e = (p.stderr or "").lower()
+    if "host key verification failed" in e and "has changed" not in e and "identification has changed" not in e:
+        rhost, rport = _resolved(user, host, port)
+        prints = _fingerprints(rhost, rport)
+        if not prints:
+            raise UserError(L("Sunucunun parmak izi alınamadı. Adresi ve kapıyı kontrol et.",
+                              "Couldn't read the server's fingerprint. Check the address and port."))
+        return "hostkey", prints
+    if "permission denied" in e and ("publickey" in e or "password" in e or "keyboard-interactive" in e):
+        key = os.path.expanduser("~/.ssh/id_ed25519")
+        return "parola", os.path.isfile(key + ".pub")
+    raise UserError(explain(p.stderr or p.stdout))
+
+
+def trust_host(p):
+    """Kullanıcının gördüğü ve onayladığı anahtarları known_hosts'a yazar (sunucuya giriş denemez)."""
+    user, host, port = parse_target(p)
+    rhost, rport = _resolved(user, host, port)
+    scanned = _scanned.pop(f"{rhost}:{rport}", "")
+    if not scanned:
+        raise UserError(L("Önce bağlanmayı dene; parmak izi henüz alınmadı.", "Try connecting first; the fingerprint hasn't been read yet."))
+    known = os.path.expanduser("~/.ssh/known_hosts")
+    os.makedirs(os.path.dirname(known), mode=0o700, exist_ok=True)
+    with open(known, "a", encoding="utf-8") as f:
+        f.write(scanned)
+    return {"tamam": True}
+
+
+def install_key(p, password):
+    """SSH anahtarını sunucuya yükler. Parola sadece bu işlem için kullanılır, hiçbir yere kaydedilmez."""
+    user, host, port = parse_target(p)
+    if not password:
+        raise UserError(L("Parolayı yaz.", "Enter the password."))
+    key = os.path.expanduser("~/.ssh/id_ed25519")
+    if not os.path.isfile(key + ".pub"):
+        if os.path.exists(key):
+            raise UserError(L(f"{key}.pub bulunamadı. Anahtarın açık (.pub) kısmı gerekli.",
+                              f"{key}.pub not found. The public (.pub) part of the key is needed."))
+        os.makedirs(os.path.dirname(key), mode=0o700, exist_ok=True)
+        r = subprocess.run(["ssh-keygen", "-t", "ed25519", "-N", "", "-C", "basic-docker", "-f", key],
+                           capture_output=True, text=True, timeout=30, env=ds.ENV)
+        if r.returncode != 0:
+            raise UserError(L("SSH anahtarı oluşturulamadı: ", "Could not create an SSH key: ") + r.stderr.strip())
+
+    # ssh-copy-id parolayı bu küçük yardımcıdan alır; parola yalnızca bu alt sürecin ortamında durur.
+    helper_dir = tempfile.mkdtemp(prefix="bd-askpass-")
+    helper = os.path.join(helper_dir, "askpass")
+    with open(helper, "w", encoding="utf-8") as f:
+        f.write('#!/bin/sh\nprintf \'%s\\n\' "$BD_SSH_PASS"\n')
+    os.chmod(helper, 0o700)
+    env = {**ds.ENV, "SSH_ASKPASS": helper, "SSH_ASKPASS_REQUIRE": "force", "DISPLAY": ":0", "BD_SSH_PASS": password}
+    env.pop("DOCKER_CONTEXT", None)
+    args = ["ssh-copy-id", "-i", key + ".pub", "-o", "StrictHostKeyChecking=yes", "-o", "ControlMaster=no",
+            "-o", "ControlPath=none", "-o", "NumberOfPasswordPrompts=1"]
+    args += (["-p", port] if port else []) + [f"{user}@{host}" if user else host]
+    try:
+        r = subprocess.run(args, capture_output=True, text=True, timeout=60, env=env, stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        raise UserError(explain("timed out"))
+    finally:
+        shutil.rmtree(helper_dir, ignore_errors=True)
+    if r.returncode != 0:
+        text = (r.stdout + r.stderr).lower()
+        if "permission denied" in text:
+            raise UserError(L("Parola kabul edilmedi.", "The password was not accepted."))
+        raise UserError(L("Anahtar yüklenemedi: ", "Could not install the key: ") + (r.stdout + r.stderr).strip()[-300:])
+    return {"tamam": True}

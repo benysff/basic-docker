@@ -640,8 +640,8 @@ function openAddRemote(after) {
           <div class="field"><label for="rm-port">${L("SSH kapısı", "SSH port")}</label><input id="rm-port" inputmode="numeric" placeholder="22"></div>
           <div class="field"><label for="rm-name">${L("Bağlantı adı", "Connection name")}</label><input id="rm-name" placeholder="${L("otomatik", "automatic")}" autocomplete="off" spellcheck="false"></div>
         </div>
-        ${callout({ level: "tip", text: L("Şifre sorulmaz; bağlantı SSH anahtarınla kurulur. Terminal'de ssh kullanici@sunucu ile şifresiz girebiliyorsan hazırsın. Sunucuda Docker kurulu, kullanıcın da docker grubunda olmalı.",
-          "No password is asked; the connection uses your SSH key. If ssh user@server works in Terminal without a password, you're ready. Docker must be installed on the server and your user must be in the docker group.") })}
+        ${callout({ level: "tip", text: L("Bağlantı SSH anahtarınla kurulur. Şifresiz giriş henüz kurulu değilse parolan bir kez sorulur ve anahtarın sunucuya yüklenir; parola hiçbir yere kaydedilmez. Sunucuda Docker kurulu, kullanıcın da docker grubunda olmalı.",
+          "The connection uses your SSH key. If passwordless login isn't set up yet, you're asked for your password once and your key is installed on the server; the password is never saved. Docker must be installed on the server and your user must be in the docker group.") })}
       </div>
       <div id="rm-tcp" class="form" hidden>
         <div class="row2">
@@ -657,6 +657,7 @@ function openAddRemote(after) {
           "A TCP connection without certificates is unencrypted; anyone on the network can control that Docker. Only use it on a network you trust or over a VPN. Prefer SSH when you can.") })}
       </div>
       <label class="check"><input type="checkbox" id="rm-use" checked><span><b>${L("Bağlanınca buna geç", "Switch to it after connecting")}</b></span></label>
+      <div id="rm-step"></div>
       <div id="f-err"></div>
     </div>`,
     foot: html`<button class="btn" data-close>${L("Vazgeç", "Cancel")}</button><button class="btn primary" id="rm-go">${icon("link")}${L("Bağlan", "Connect")}</button>`,
@@ -674,24 +675,64 @@ function openAddRemote(after) {
         try { const r = await api("/api/klasor-sec", {}); if (r.yol) $("#rm-tls", m).value = r.yol; } catch (e) { flash(e.message, true); }
       });
       const go = $("#rm-go", m);
-      const submit = async () => {
+      // Ara adımlar: ilk bağlantıda parmak izi onayı, şifresiz giriş yoksa parolayla anahtar kurulumu.
+      let step = null;
+      const goLabel = { null: [icon("link"), L("Bağlan", "Connect")], hostkey: [icon("shield"), L("Parmak izi doğru, güven", "Fingerprint matches, trust it")], parola: [icon("key"), L("Anahtarı yükle ve bağlan", "Install key and connect")] };
+      const resetGo = () => { go.disabled = false; const [ic, t] = goLabel[step?.type ?? null]; go.innerHTML = String(html`${ic}${t}`); };
+      const showStep = () => {
+        const box = $("#rm-step", m);
+        if (!step) { box.innerHTML = ""; return resetGo(); }
+        box.innerHTML = String(step.type === "hostkey"
+          ? html`${callout({ level: "warn", title: L("Bu sunucuya ilk kez bağlanıyorsun", "First connection to this server"),
+              text: L("Bilgisayarın sunucunun kimliğini henüz tanımıyor. Aşağıdaki parmak izi, sunucu sağlayıcının panelinde ya da sunucuda “ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub” komutuyla gördüğünle aynıysa güvenle devam edebilirsin.",
+                "Your computer doesn't know this server's identity yet. If the fingerprint below matches what your hosting panel shows (or “ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub” on the server), it's safe to continue.") })}
+              <div class="fp-list">${step.prints.map((f) => html`<div class="fp"><span class="muted small">${f.tur}</span><code>${f.iz}</code></div>`)}</div>`
+          : html`${callout({ level: "info", title: L("Tek seferlik kurulum: SSH anahtarı", "One-time setup: SSH key"),
+              text: L(`Bu sunucuya henüz şifresiz giremiyorsun. Sunucu parolanı bir kez yaz; ${step.hasKey ? "Mac'indeki SSH anahtarın" : "senin için yeni bir SSH anahtarı oluşturulup"} sunucuya yüklenir. Parola hiçbir yere kaydedilmez.`,
+                `You can't log in to this server without a password yet. Enter the server password once; ${step.hasKey ? "the SSH key on your Mac" : "a new SSH key is created for you and"} is installed on the server. The password is never saved.`) })}
+              <div class="field"><label for="rm-pass">${L("Sunucu parolası", "Server password")}</label>
+                <input id="rm-pass" type="password" autocomplete="off" placeholder="${L("Bir kez kullanılır, kaydedilmez", "Used once, never saved")}"></div>`);
+        resetGo();
+        $("#rm-pass", m)?.focus();
+      };
+      m.addEventListener("input", (e) => {
+        // Adres değişince ara adım geçersiz.
+        if (step && ["rm-host", "rm-port", "rm-name"].includes(e.target.id)) { step = null; showStep(); }
+      });
+      const collect = () => {
         const v = (id) => $(id, m).value.trim();
         const body = kind === "ssh"
           ? { tur: "ssh", sunucu: v("#rm-host"), kapi: v("#rm-port"), ad: v("#rm-name") }
           : { tur: "tcp", sunucu: v("#rm-thost"), kapi: v("#rm-tport"), tls: v("#rm-tls"), ad: v("#rm-tname") };
         body.gec = $("#rm-use", m).checked;
+        return body;
+      };
+      const submit = async () => {
+        const body = collect();
         go.disabled = true;
         go.innerHTML = String(html`<span class="spinner"></span>${L("Bağlanılıyor…", "Connecting…")}`);
         $("#f-err", m).innerHTML = "";
         try {
+          if (step?.type === "hostkey") {
+            await api("/api/uzak/guven", body);
+            step = null;
+          } else if (step?.type === "parola") {
+            const parola = $("#rm-pass", m)?.value || "";
+            if (!parola) { resetGo(); return formError(m, L("Sunucu parolasını yaz.", "Enter the server password.")); }
+            go.innerHTML = String(html`<span class="spinner"></span>${L("Anahtar yükleniyor…", "Installing key…")}`);
+            await api("/api/uzak/anahtar", { ...body, parola });
+            step = null;
+          }
           const r = (await api("/api/uzak/ekle", body)).sonuc;
+          if (r.gerekli === "hostkey") { step = { type: "hostkey", prints: r.parmak_izi }; return showStep(); }
+          if (r.gerekli === "parola") { step = { type: "parola", hasKey: r.anahtar_var }; return showStep(); }
           Modal.close();
           flash(L(`Bağlandı: ${r.name} · Docker ${r.version}`, `Connected: ${r.name} · Docker ${r.version}`));
           if (body.gec) await afterContextChange();
           else after?.();
         } catch (e) {
-          go.disabled = false;
-          go.innerHTML = String(html`${icon("link")}${L("Bağlan", "Connect")}`);
+          if (step?.type === "hostkey") step = null;  // parmak izi adımı tekrar denensin
+          if (step) showStep(); else resetGo();
           formError(m, e.message);
         }
       };
