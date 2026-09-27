@@ -72,10 +72,11 @@ Get the file for your computer from the [Releases](https://github.com/benysff/ba
 |---|---|
 | Mac (M1/M2/M3/M4…) | `Basic-Docker-macOS-AppleSilicon.zip` |
 | Mac (Intel) | `Basic-Docker-macOS-Intel.zip` |
-| Windows 10/11 (experimental) | `Basic-Docker-Windows.zip` |
+| Windows 10/11 (experimental) | `Basic-Docker-Windows-Kurulum.exe` |
 
 No Python needed; everything is in the package. The app isn't signed, so the Mac warns on first launch:
-System Settings → Privacy & Security → **Open Anyway**. On Windows, if SmartScreen warns, choose **More info → Run anyway**.
+System Settings → Privacy & Security → **Open Anyway**. On Windows just run the installer: it installs into your user folder
+(`AppData`) without asking for admin rights and adds a Start menu entry. If SmartScreen warns, choose **More info → Run anyway**.
 
 ### Install from source (Mac)
 
@@ -170,7 +171,7 @@ the activity history in `~/.basic-docker/etkinlik.jsonl`.
 - Interface texts are written in both languages: `L("Türkçe", "English")` in JavaScript and `ds.L("Türkçe", "English")` in Python.
   English texts for ready-made containers live in the fields ending with `_en` in `catalog.py`.
 - Releasing: update `VERSION` in `app.py` and `.github/SURUM_NOTLARI.md`, then once it's on main run
-  `git tag v2.1.0 && git push origin v2.1.0`. GitHub Actions builds, tests and attaches the Mac (Apple Silicon, Intel)
+  `git tag v2.1.1 && git push origin v2.1.1`. GitHub Actions builds, tests and attaches the Mac (Apple Silicon, Intel)
   and Windows packages to the Release. Pull requests are built too; the packages can be downloaded from the Actions page.
 
 ## License

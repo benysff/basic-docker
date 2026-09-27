@@ -38,7 +38,7 @@ jobs:
             dosya: Basic-Docker-macOS-Intel.zip
           - ad: Windows (deneysel)
             os: windows-latest
-            dosya: Basic-Docker-Windows.zip
+            dosya: Basic-Docker-Windows-Kurulum.exe
     steps:
       - uses: actions/checkout@v4
 
@@ -70,6 +70,29 @@ jobs:
           print(repr(out[-200:]), "çıkış:", p.exitstatus)
           assert "merhaba-terminal" in out, "terminal çıktısı okunamadı"
 
+      - name: Windows'a özel işlevler çalışıyor mu?
+        if: runner.os == 'Windows'
+        shell: python
+        run: |
+          import os, subprocess, sys, tempfile
+          sys.path.insert(0, os.getcwd())  # betik geçici klasörden çalışır; proje modülleri çalışma klasöründe
+          import docker_service as ds, backups as bk, resources as rs, app
+          assert ds.here("te") == "bu bilgisayarda" and ds.here_en() == "this computer", "Windows'ta 'bu bilgisayar' denmeli"
+          # Yedek silme: Geri Dönüşüm Kutusu'na (geri alınabilir)
+          d = tempfile.mkdtemp(); f = os.path.join(d, "deneme.txt")
+          open(f, "w").write("x")
+          assert bk._recycle_windows(f) and not os.path.exists(f), "Geri Dönüşüm Kutusu'na taşınamadı"
+          # Kapı haritası: netstat + tasklist
+          ports = rs._listening_windows()
+          print("dinlenen kapılar:", {p: v[0]["proc"] for p, v in sorted(ports.items())[:8]})
+          assert ports, "dinlenen kapı okunamadı"
+          print("motor:", ds.engine_kind())
+          # Pano (Actions makinesinde masaüstü oturumu olmayabilir; olmazsa sadece uyar)
+          try:
+              print("pano:", app.api_copy({"metin": "Türkçe ğüşiöç"}))
+          except Exception as e:
+              print("uyarı: pano denenemedi:", e)
+
       - name: Paketle
         run: pyinstaller --noconfirm basic-docker.spec
 
@@ -84,10 +107,41 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $p = Start-Process -FilePath "dist/Basic Docker/Basic Docker.exe" -ArgumentList "--kendini-dene", "deneme.json" -Wait -PassThru
+          $p = Start-Process -FilePath "dist/Basic Docker/Basic Docker.exe" -ArgumentList "--kendini-dene", "$PWD\deneme.json" -Wait -PassThru
           Get-Content deneme.json
           if ($p.ExitCode -ne 0) { throw "Paket denemesi başarısız (çıkış kodu $($p.ExitCode))" }
-          Compress-Archive -Path "dist/Basic Docker" -DestinationPath "${{ matrix.dosya }}"
+
+      - name: Kurulum dosyası (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          $surum = (Select-String -Path app.py -Pattern '^VERSION = "([^"]+)"').Matches[0].Groups[1].Value
+          & $iscc "/DAppVersion=$surum" "packaging\windows-kurulum.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Kurulum dosyası üretilemedi" }
+          Copy-Item "dist\Basic-Docker-Windows-Kurulum.exe" "${{ matrix.dosya }}"
+
+      - name: Kurulumu dene (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Sessiz kur → AppData'daki kopyayı dene → Başlat menüsü kısayolu var mı → kaldır
+          $k = Start-Process -FilePath "${{ matrix.dosya }}" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG=$PWD\kurulum.log" -Wait -PassThru
+          if ($k.ExitCode -ne 0) { Get-Content kurulum.log -Tail 40; throw "Kurulum başarısız (çıkış kodu $($k.ExitCode))" }
+          $klasor = Join-Path $env:LOCALAPPDATA "Programs\Basic Docker"
+          $exe = Join-Path $klasor "Basic Docker.exe"
+          if (-not (Test-Path $exe)) { throw "Kurulum yerinde uygulama yok: $exe" }
+          $t = Start-Process -FilePath $exe -ArgumentList "--kendini-dene", "$PWD\kurulu.json" -Wait -PassThru
+          Get-Content kurulu.json
+          if ($t.ExitCode -ne 0) { throw "Kurulu uygulamanın denemesi başarısız" }
+          $kisayol = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Basic Docker.lnk"
+          if (-not (Test-Path $kisayol)) { throw "Başlat menüsü kısayolu yok" }
+          Start-Process -FilePath (Join-Path $klasor "unins000.exe") -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
+          for ($i = 0; $i -lt 30 -and (Test-Path $exe); $i++) { Start-Sleep 1 }
+          if (Test-Path $exe) { throw "Kaldırma sonrası uygulama hâlâ duruyor" }
+          if (Test-Path $kisayol) { throw "Kaldırma sonrası kısayol hâlâ duruyor" }
+          "Kurulum, deneme ve kaldırma tamam."
 
       - uses: actions/upload-artifact@v4
         with:

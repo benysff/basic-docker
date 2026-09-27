@@ -78,8 +78,8 @@ const SystemView = {
       const r = await confirmDialog({
         title: L(`“${name}” bağlamına geçilsin mi?`, `Switch to the “${name}” context?`), confirmText: L("Geç", "Switch"), icon: "server",
         text: isRemote
-          ? L("Sadece Basic Docker bu sunucuya bağlanır; terminaldeki docker komutu bu Mac'te kalır (yanlışlıkla sunucuda komut çalıştırmazsın). Varsayılan olarak güvenli moddadır.",
-            "Only Basic Docker connects to this server; the docker command in your terminal stays on this Mac (so you can't run something on the server by accident). It starts in safe mode.")
+          ? L(`Sadece Basic Docker bu sunucuya bağlanır; terminaldeki docker komutu ${here("te")} kalır (yanlışlıkla sunucuda komut çalıştırmazsın). Varsayılan olarak güvenli moddadır.`,
+            `Only Basic Docker connects to this server; the docker command in your terminal stays on ${hereEn()} (so you can't run something on the server by accident). It starts in safe mode.`)
           : L("Basic Docker ve terminaldeki docker komutu artık bu motora bağlanır. Diğer motordaki parçalar silinmez; geri geçince yine görünür.",
             "Basic Docker and the docker command in your terminal will connect to this engine. Containers on the other engine are not deleted; they show up again when you switch back."),
       });
@@ -101,8 +101,8 @@ const SystemView = {
       const name = del.dataset.ctxDel;
       const r = await confirmDialog({
         title: L(`“${name}” bağlantısı silinsin mi?`, `Remove the “${name}” connection?`), danger: true, icon: "trash", confirmText: L("Sil", "Remove"),
-        text: L("Sadece bu Mac'teki bağlantı kaydı silinir. Sunucudaki parçalara ve verilere dokunulmaz.",
-          "Only the connection saved on this Mac is removed. Containers and data on the server are not touched."),
+        text: L(`Sadece ${here("teki")} bağlantı kaydı silinir. Sunucudaki parçalara ve verilere dokunulmaz.`,
+          `Only the connection saved on ${hereEn()} is removed. Containers and data on the server are not touched.`),
       });
       if (!r) return;
       try { await api("/api/baglam/sil", { ad: name }); flash(L("Bağlantı silindi", "Connection removed")); this.load(); } catch (err) { flash(err.message, true); }
@@ -183,12 +183,12 @@ const SystemView = {
               [L("docker komutu", "docker command"), html`<span class="mono">${i.docker_path || L("bulunamadı", "not found")}</span>`],
             ])}
             ${remote ? html`<p class="muted small">${remote.kind === "ssh"
-              ? L("Bu motor uzak bir sunucuda. Parçaların kapılarına bu Mac'ten ulaşmak için bağlantılarına tıkla; SSH tüneli kendiliğinden açılır (VS Code'daki gibi).",
-                "This engine is on a remote server. Click a container's link to reach its port from this Mac; an SSH tunnel opens automatically (like in VS Code).")
+              ? L(`Bu motor uzak bir sunucuda. Parçaların kapılarına ${here("ten")} ulaşmak için bağlantılarına tıkla; SSH tüneli kendiliğinden açılır (VS Code'daki gibi).`,
+                `This engine is on a remote server. Click a container's link to reach its port from ${hereEn()}; an SSH tunnel opens automatically (like in VS Code).`)
               : L("Bu motor uzak bir sunucuda (TCP). Kapılara sunucunun adresiyle ulaşılır; sadece sunucunun kendisine açık (127.0.0.1) kapılara buradan ulaşılamaz.",
                 "This engine is on a remote server (TCP). Ports are reached at the server's address; ports bound only to the server itself (127.0.0.1) can't be reached from here.")}</p>`
               : i.engine === "orbstack" ? html`<p class="muted small">${L("Motorun bellek ve işlemci sınırını OrbStack'in kendi ayarlarından değiştirebilirsin.", "You can change the engine's memory and CPU limits in OrbStack's own settings.")}</p>`
-              : i.engine === "docker-desktop" ? html`<p class="muted small">${L("Bellek ve işlemci sınırı", "Memory and CPU limits")}: Docker Desktop → Settings → Resources.</p>` : ""}
+              : i.engine === "docker-desktop" ? html`<p class="muted small">${L("Bellek ve işlemci sınırı", "Memory and CPU limits")}: Docker Desktop → Settings → Resources${onWin() ? L(" (WSL 2 kullanıyorsa %UserProfile%\\.wslconfig dosyasından)", " (with WSL 2: in %UserProfile%\\.wslconfig)") : ""}.</p>` : ""}
             ${i.warnings.length ? callout({ level: "warn", title: L("Docker uyarıları", "Docker warnings"), text: i.warnings.join(" · ") }) : ""}` : ""}
         </section>
 
@@ -197,15 +197,15 @@ const SystemView = {
             <h3 class="panel-title">${icon("server")}${L("Bağlantılar (hangi Docker'ı yönetiyorsun?)", "Connections (which Docker are you managing?)")}</h3>
             <button class="btn sm primary" data-add-remote>${icon("plus")}${L("Uzak Docker ekle", "Add remote Docker")}</button>
           </div>
-          <p class="muted small">${L("Bu Mac'teki motorlar (OrbStack, Docker Desktop) ve eklediğin uzak sunucular. Uzak sunucuya SSH anahtarınla bağlanılır; VS Code'daki gibi.",
-            "Engines on this Mac (OrbStack, Docker Desktop) and remote servers you've added. Remote servers are reached with your SSH key, just like in VS Code.")}</p>
+          <p class="muted small">${L(`${here("teki", true)} motorlar (${onMac() ? "OrbStack, Docker Desktop" : "Docker Desktop"}) ve eklediğin uzak sunucular. Uzak sunucuya SSH anahtarınla bağlanılır; VS Code'daki gibi.`,
+            `Engines on ${hereEn()} (${onMac() ? "OrbStack, Docker Desktop" : "Docker Desktop"}) and remote servers you've added. Remote servers are reached with your SSH key, just like in VS Code.`)}</p>
           <ul class="ctx-list">${this.ctx.baglamlar.map((c) => {
             const tr = this.tests[c.name];
             return html`
             <li class="${c.current ? "current" : ""}">
               ${dot(c.current ? "ok" : "off")}
               <div class="grow min0">
-                <div class="strong">${c.name} ${pill(c.kind === "local" ? L("Bu Mac", "This Mac") : c.kind.toUpperCase(), c.kind === "local" ? "" : "info")}${c.desc ? html` <span class="muted small">— ${c.desc}</span>` : ""}</div>
+                <div class="strong">${c.name} ${pill(c.kind === "local" ? L(here("", true), hereEn(true)) : c.kind.toUpperCase(), c.kind === "local" ? "" : "info")}${c.desc ? html` <span class="muted small">— ${c.desc}</span>` : ""}</div>
                 <div class="mono small muted ellipsis">${c.endpoint}</div>
                 ${c.error ? html`<div class="small txt-err">${c.error}</div>` : ""}
                 ${tr ? html`<div class="small ${tr.busy ? "muted" : tr.ok ? "txt-ok" : "txt-err"}">${tr.busy ? L("Deneniyor…", "Testing…")
@@ -225,8 +225,8 @@ const SystemView = {
 
         ${remote?.kind === "ssh" ? html`<section class="panel span-2">
           <h3 class="panel-title">${icon("link")}${L("SSH tünelleri", "SSH tunnels")}</h3>
-          <p class="muted small">${L("Sunucudaki bir kapıyı bu Mac'e getirir: sunucuda 3000'de çalışan site, burada localhost:3000'de açılır. Bağlantılara tıklayınca kendiliğinden açılır; veritabanı gibi tıklanmayan kapılar için buradan aç.",
-            "Brings a port on the server to this Mac: a site running on 3000 there opens at localhost:3000 here. Tunnels open automatically when you click a link; open one here for ports you don't click, like a database.")}</p>
+          <p class="muted small">${L(`Sunucudaki bir kapıyı ${here("e")} getirir: sunucuda 3000'de çalışan site, burada localhost:3000'de açılır. Bağlantılara tıklayınca kendiliğinden açılır; veritabanı gibi tıklanmayan kapılar için buradan aç.`,
+            `Brings a port on the server to ${hereEn()}: a site running on 3000 there opens at localhost:3000 here. Tunnels open automatically when you click a link; open one here for ports you don't click, like a database.`)}</p>
           ${this.ctx?.tuneller?.length ? html`<ul class="ctx-list">${this.ctx.tuneller.map((tn) => html`
             <li>${dot("ok")}
               <div class="grow min0"><div class="strong mono">localhost:${tn.local} → ${remote.host}:${tn.remote}</div><div class="small muted">${L(`${fmt.ago(tn.started)} açıldı`, `opened ${fmt.ago(tn.started)}`)}</div></div>
@@ -245,7 +245,7 @@ const SystemView = {
             ${segmented("lang", [{ id: "tr", label: "Türkçe" }, { id: "en", label: "English" }], S.prefs.lang === "en" ? "en" : "tr")}
           </div>
           <div class="setting">
-            <div><div class="strong">${L("Tema", "Theme")}</div><div class="muted small">${L("Sistem seçilirse macOS'un açık/koyu ayarını izler.", "System follows macOS's light/dark setting.")}</div></div>
+            <div><div class="strong">${L("Tema", "Theme")}</div><div class="muted small">${L(`Sistem seçilirse ${onMac() ? "macOS'un" : onWin() ? "Windows'un" : "işletim sisteminin"} açık/koyu ayarını izler.`, `System follows ${onMac() ? "macOS's" : onWin() ? "Windows'" : "the system's"} light/dark setting.`)}</div></div>
             ${segmented("tema", [{ id: "sistem", label: L("Sistem", "System"), icon: "monitor" }, { id: "acik", label: L("Açık", "Light"), icon: "sun" }, { id: "koyu", label: L("Koyu", "Dark"), icon: "moon" }], S.prefs.tema || "sistem")}
           </div>
           ${isEN() ? "" : html`<div class="setting">
@@ -260,10 +260,10 @@ const SystemView = {
 
         <section class="panel">
           <h3 class="panel-title">${icon("bell")}${L("Bildirimler ve yedekler", "Notifications & backups")}</h3>
-          <div class="setting">
+          ${onMac() ? html`<div class="setting">
             <div><div class="strong">${L("Çökünce bildir", "Notify on crash")}</div><div class="muted small">${L("Bir parça beklenmedik şekilde kapanırsa ya da sağlık kontrolünden geçemezse macOS bildirimi gelir (Basic Docker açıkken).", "You get a macOS notification if a container stops unexpectedly or fails its health check (while Basic Docker is open).")}</div></div>
             <label class="switch-inline"><input type="checkbox" id="sy-notify" ${S.prefs.bildirim !== false ? raw("checked") : ""}><span class="switch" aria-hidden="true"></span><span class="sr">${L("Çökünce bildir", "Notify on crash")}</span></label>
-          </div>
+          </div>` : ""}
           <div class="setting column">
             <div><div class="strong">${L("Yedek klasörü", "Backups folder")}</div><div class="mono small muted ellipsis" title="${this.prefs?.yedek_klasoru}">${this.prefs?.yedek_klasoru || ""}</div></div>
             <div class="row-actions"><button class="btn sm" data-open-backups>${icon("folder")}${L("Aç", "Open")}</button><button class="btn sm" data-backup-root>${L("Değiştir…", "Change…")}</button></div>
@@ -278,8 +278,8 @@ const SystemView = {
         <section class="panel">
           <h3 class="panel-title">${icon("info")}${L("Hakkında", "About")}</h3>
           <p><b>Basic Docker</b> <span class="mono muted">v${this.prefs?.surum || ""}</span></p>
-          <p class="muted small">${isEN() ? html`A native Mac app that manages Docker in plain language. It runs entirely locally, opens nothing to the network and only uses the <code>docker</code> command.`
-            : html`Docker'ı sade Türkçeyle yöneten, Mac'e özel uygulama. Tamamen yerel çalışır; ağa bir şey açmaz, sadece <code>docker</code> komutunu kullanır.`}</p>
+          <p class="muted small">${isEN() ? html`A desktop app that manages Docker in plain language. It runs entirely locally, opens nothing to the network and only uses the <code>docker</code> command.`
+            : html`Docker'ı sade Türkçeyle yöneten masaüstü uygulaması. Tamamen yerel çalışır; ağa bir şey açmaz, sadece <code>docker</code> komutunu kullanır.`}</p>
           <div class="row-actions wrap">
             <button class="btn sm" data-help>${icon("help")}${L("Sözlük", "Glossary")}</button>
             <button class="btn sm" data-intro>${icon("info")}${L("Tanıtımı tekrar göster", "Show the intro again")}</button>

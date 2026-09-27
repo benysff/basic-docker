@@ -32,8 +32,9 @@ const ActivityView = {
           title: L("Etkinlik", "Activity"),
           desc: L("Parçaların ne zaman başladığı, durduğu, çöktüğü. Docker bu geçmişi kısa tutar; Basic Docker açıkken olanları kaydeder.",
             "When containers started, stopped or crashed. Docker keeps this history short; Basic Docker records what happens while it is open."),
-          actions: html`<label class="switch-inline" title="${L("Bir parça beklenmedik şekilde çökerse macOS bildirimi gönder", "Send a macOS notification if a container crashes unexpectedly")}">
-            <input type="checkbox" id="ev-notify" ${S.prefs.bildirim !== false ? raw("checked") : ""}><span class="switch" aria-hidden="true"></span>${icon("bell")}${L("Çökünce bildir", "Notify on crash")}</label>`,
+          // Çökme bildirimi şimdilik sadece macOS'ta var; başka yerde işe yaramayan düğme gösterilmez.
+          actions: onMac() ? html`<label class="switch-inline" title="${L("Bir parça beklenmedik şekilde çökerse macOS bildirimi gönder", "Send a macOS notification if a container crashes unexpectedly")}">
+            <input type="checkbox" id="ev-notify" ${S.prefs.bildirim !== false ? raw("checked") : ""}><span class="switch" aria-hidden="true"></span>${icon("bell")}${L("Çökünce bildir", "Notify on crash")}</label>` : "",
         })}
         <div class="toolbar">
           ${searchBox("ev-search", L(`${T("app")} ya da ${Tl("container")} ara…`, "Search apps or containers…"), this.query)}
@@ -101,8 +102,8 @@ const ActivityView = {
       { id: "kaynak", label: L("Oluştur / sil", "Create / delete"), count: evs.filter(cats.kaynak).length },
     ], this.filter));
     let list = this.filter === "hepsi" ? evs : evs.filter(cats[this.filter]);
-    const qq = this.query.trim().toLocaleLowerCase(loc());
-    if (qq) list = list.filter((e) => [e.name, e.app, e.service, e.image, e.text].join(" ").toLocaleLowerCase(loc()).includes(qq));
+    const qq = fold(this.query.trim());
+    if (qq) list = list.filter((e) => fold([e.name, e.app, e.service, e.image, e.text].join(" ")).includes(qq));
     if (!list.length) {
       return patch(body, emptyState({
         icon: "activity", compact: true,

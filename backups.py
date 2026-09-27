@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import tarfile
 import time
 
 import docker_service as ds
@@ -30,11 +31,16 @@ TOOL_MISSING = (126, 127)  # docker exec: program bulunamadı / çalıştırıla
 def backup_root():
     custom = ds.load_settings()["arayuz"].get("yedek_klasoru")
     root = custom if custom and os.path.isabs(custom) else os.path.expanduser("~/Documents/Basic Docker Yedekleri")
-    return root
+    return os.path.normpath(root)  # Windows'ta karışık / ve \ olmasın (Gezgin yanlış klasörü açıyordu)
+
+
+def clean_path(path):
+    """Yapıştırılan yol: baştaki/sondaki boşluklar ve Gezgin'in “Yol olarak kopyala”sının eklediği tırnaklar gider."""
+    return (path or "").strip().strip('"').strip("'").strip()
 
 
 def set_backup_root(path):
-    path = os.path.realpath(os.path.expanduser((path or "").strip()))
+    path = os.path.realpath(os.path.expanduser(clean_path(path)))
     if not os.path.isdir(path):
         raise UserError(L("Klasör bulunamadı.", "Folder not found."))
     ds.update_settings(lambda s: s["arayuz"].update({"yedek_klasoru": path}))
@@ -76,7 +82,7 @@ def _run_to_file(job, args, path, timeout=3600):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".yaziliyor"
     with open(tmp, "wb") as fh:
-        proc = subprocess.Popen([ds.DOCKER, *args], stdout=fh, stderr=subprocess.PIPE, env=ds.ENV)
+        proc = subprocess.Popen([ds.DOCKER, *args], stdout=fh, stderr=subprocess.PIPE, env=ds.cur_env())
         try:
             _, err = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -96,10 +102,10 @@ def _run_to_file(job, args, path, timeout=3600):
     return 0
 
 
-def _run_from_file(job, args, path, timeout=3600):
+def _run_from_file(job, args, path, timeout=3600, stats=None):
     with open(path, "rb") as fh:
         proc = subprocess.Popen([ds.DOCKER, *args], stdin=fh, stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT, env=ds.ENV)
+                                stderr=subprocess.STDOUT, env=ds.cur_env())
         try:
             out, _ = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -109,7 +115,20 @@ def _run_from_file(job, args, path, timeout=3600):
     lines = [ln for ln in text.splitlines() if ln.strip()]
     for ln in lines[-200:]:
         job.log(ln)
+    if stats is not None:
+        stats["errors"] = sum(1 for ln in lines if "ERROR:" in ln)  # psql hatayı yazar ama 0 ile çıkabilir
     return proc.returncode
+
+
+def _check_archive(path):
+    """Yedeği sonuna kadar okur; bozuk ya da yarım dosyada kutuya dokunmadan durmak için."""
+    try:
+        with tarfile.open(path, "r:*") as tf:
+            for _ in tf:
+                pass
+    except (tarfile.TarError, OSError, EOFError, ValueError) as e:
+        raise UserError(L(f"Yedek dosyası bozuk ya da eksik ({e}); veri kutusuna dokunulmadı.",
+                          f"The backup file is corrupt or incomplete ({e}); the volume was not touched."))
 
 
 # ---------------------------------------------------------------------------
@@ -143,7 +162,7 @@ def backup_volume(name):
 
 
 def restore_volume(path, target, create_new=False, wipe=False):
-    path = os.path.realpath(os.path.expanduser(path or ""))
+    path = os.path.realpath(os.path.expanduser(clean_path(path)))
     if not os.path.isfile(path) or not path.endswith((".tar.gz", ".tgz", ".tar")):
         raise UserError(L("Yedek dosyası bulunamadı (.tar.gz olmalı).", "Backup file not found (must be .tar.gz)."))
     target = (target or "").strip()
@@ -161,6 +180,9 @@ def restore_volume(path, target, create_new=False, wipe=False):
                             + L(". Önce onları durdur.", ". Stop them first."))
 
     def run(job):
+        # Önce yedek sonuna kadar okunur: bozuksa "önce boşalt" seçiliyken bile kutudaki veri silinmez.
+        job.log(L("Yedek dosyası denetleniyor…", "Checking the backup file…"))
+        _check_archive(path)
         helper = _helper_image(job)
         if create_new:
             code, _, err = ds.docker("volume", "create", target, timeout=30)
@@ -174,6 +196,9 @@ def restore_volume(path, target, create_new=False, wipe=False):
         code = _run_from_file(job, ["run", "--rm", "--label", HELPER_LABEL, "-i", "-v", f"{target}:/kutu", "--entrypoint", "sh", helper,
                                     "-c", script], path)
         if code != 0:
+            if create_new:  # yarım kalmış yeni kutu ortada kalmasın
+                ds.docker("volume", "rm", target, timeout=30)
+                job.log(L(f"Yarım kalan {target} kutusu silindi.", f"Removed the incomplete {target} volume."))
             raise UserError(L("Geri yükleme başarısız oldu. Ayrıntılara bak.", "The restore failed. See the details."))
         rs.invalidate_df()
         return L(f"Geri yüklendi: {target}", f"Restored: {target}")
@@ -285,7 +310,7 @@ def dump_database(cid):
 
 
 def restore_database(cid, path):
-    path = os.path.realpath(os.path.expanduser(path or ""))
+    path = os.path.realpath(os.path.expanduser(clean_path(path)))
     if not os.path.isfile(path):
         raise UserError(L("Döküm dosyası bulunamadı.", "Dump file not found."))
     _, c = ds.get_container(cid)
@@ -294,6 +319,13 @@ def restore_database(cid, path):
         raise UserError(L("Bu parça bir veritabanı gibi görünmüyor.", "This container doesn't look like a database."))
     if not c["running"]:
         raise UserError(L("Geri yükleme için veritabanının çalışıyor olması gerekir. Önce başlat.", "The database must be running to restore. Start it first."))
+    m = _NAME_RE.match(os.path.basename(path))
+    dump = _dump_engine(path, m.group("ext") if m else path.rsplit(".", 1)[-1])
+    if dump and dump != {"mariadb": "mysql"}.get(engine, engine):
+        names = {"postgres": "PostgreSQL", "mysql": "MySQL/MariaDB", "mongo": "MongoDB"}
+        raise UserError(L(f"Bu bir {names[dump]} dökümü; {names[{'mariadb': 'mysql'}.get(engine, engine)]} veritabanına yüklenemez.",
+                          f"This is a {names[dump]} dump; it can't be restored into a "
+                          f"{names[{'mariadb': 'mysql'}.get(engine, engine)]} database."))
     env = _env_of(c["name"])
     if engine == "postgres":
         user = env.get("POSTGRES_USER") or "postgres"
@@ -318,7 +350,14 @@ def restore_database(cid, path):
     def run(job):
         for i, tool in enumerate(tools):
             job.log(L(f"{os.path.basename(path)} geri yükleniyor ({tool[0]})…", f"Restoring {os.path.basename(path)} ({tool[0]})…"))
-            code = _run_from_file(job, ["exec", "-i", *_exec_env_args(extra), c["name"], *tool], path)
+            stats = {}
+            code = _run_from_file(job, ["exec", "-i", *_exec_env_args(extra), c["name"], *tool], path, stats=stats)
+            if code == 0 and stats.get("errors"):
+                # psql hataları geçip devam eder ve 0 ile çıkar; "başarılı" demek yanlış olur.
+                raise UserError(L(f"Geri yükleme bitti ama {stats['errors']} komut hata verdi. Ayrıntılara bak "
+                                  "(ör. tablo zaten varsa önce boş bir veritabanına yüklemeyi dene).",
+                                  f"The restore finished but {stats['errors']} statements failed. See the details "
+                                  "(e.g. if tables already exist, try restoring into an empty database)."))
             if code == 0:
                 return L("Veritabanı geri yüklendi.", "Database restored.")
             if code not in TOOL_MISSING or i + 1 >= len(tools):
@@ -386,9 +425,29 @@ def list_backups():
     return {"root": root, "backups": out}
 
 
+def _recycle_windows(path):
+    """Windows Geri Dönüşüm Kutusu'na taşır (geri alınabilir silme)."""
+    import ctypes
+    from ctypes import wintypes
+
+    class SHFILEOPSTRUCTW(ctypes.Structure):
+        _fields_ = [("hwnd", wintypes.HWND), ("wFunc", wintypes.UINT), ("pFrom", wintypes.LPCWSTR),
+                    ("pTo", wintypes.LPCWSTR), ("fFlags", ctypes.c_ushort), ("fAnyOperationsAborted", wintypes.BOOL),
+                    ("hNameMappings", ctypes.c_void_p), ("lpszProgressTitle", wintypes.LPCWSTR)]
+
+    FO_DELETE, FOF_SILENT, FOF_NOCONFIRMATION, FOF_ALLOWUNDO, FOF_NOERRORUI = 3, 0x4, 0x10, 0x40, 0x400
+    op = SHFILEOPSTRUCTW(None, FO_DELETE, os.path.abspath(path) + "\0", None,
+                         FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI, False, None, None)
+    return ctypes.windll.shell32.SHFileOperationW(ctypes.byref(op)) == 0 and not op.fAnyOperationsAborted
+
+
 def delete_backup(path):
     if not path or not os.path.isfile(path) or not _inside_root(path):
         raise UserError(L("Yedek dosyası bulunamadı.", "Backup file not found."))
+    if ds.IS_WIN:
+        if _recycle_windows(path) and not os.path.exists(path):
+            return L("Geri Dönüşüm Kutusu'na taşındı.", "Moved to the Recycle Bin.")
+        raise UserError(L("Geri Dönüşüm Kutusu'na taşınamadı.", "Could not move to the Recycle Bin."))
     if ds.IS_MAC:
         # Kalıcı silme yerine Çöp Sepeti'ne taşı (geri alınabilsin). macOS'un kendi işlevi;
         # Finder'ı kontrol etmek için izin istemez.
@@ -402,7 +461,7 @@ def delete_backup(path):
         except ImportError:
             pass
     os.remove(path)
-    return L("Silindi.", "Deleted.")
+    return L("Kalıcı olarak silindi.", "Deleted permanently.")
 
 
 def reveal(path=None):
@@ -411,6 +470,11 @@ def reveal(path=None):
     if ds.IS_MAC:
         subprocess.Popen(["open", "-R", target] if os.path.isfile(target) else ["open", target])
     elif ds.IS_WIN:
-        subprocess.Popen(["explorer", f"/select,{target}"] if os.path.isfile(target) else ["explorer", target])
+        target = os.path.normpath(target)
+        if os.path.isfile(target):
+            # /select, ile tırnaklı yol tek parça olmalı; liste verilirse Python bütün argümanı tırnaklar, Gezgin anlamaz.
+            subprocess.Popen(f'explorer /select,"{target}"')
+        else:
+            os.startfile(target)  # type: ignore[attr-defined]
     else:
         subprocess.Popen(["xdg-open", os.path.dirname(target) if os.path.isfile(target) else target])

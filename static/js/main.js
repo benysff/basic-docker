@@ -34,7 +34,7 @@ Router.add("/etkinlik", ActivityView, "activity");
 Router.add("/sistem", SystemView, "system");
 
 let activeNav = "apps";
-bus.on("route", (nav) => { activeNav = nav; renderSidebar(); document.body.classList.remove("sb-open"); });
+bus.on("route", (nav) => { activeNav = nav; renderSidebar(); renderEngineState(); document.body.classList.remove("sb-open"); });
 
 // ---------- Tema ---------------------------------------------------------------
 const darkMQ = window.matchMedia("(prefers-color-scheme: dark)");
@@ -76,6 +76,7 @@ async function setLanguage(lang) {
   S.catalog = null;
   applyLanguage();
   await api("/api/ayarlar/kaydet", { lang }).catch(() => {});
+  _gen++;  // eski dildeki cevaplar geri gelmesin
   await refresh(); // arka taraftaki yazılar (durum, rol adları) yeni dilde gelsin
   Router.current?.view.unmount?.();
   Router.current = null;
@@ -125,7 +126,7 @@ function renderSidebar() {
         <button class="icon-btn xs sb-add" data-global="sunucu-ekle" aria-label="${L("Sunucu ekle", "Add server")}" title="${L("Sunucu ekle", "Add server")}">${icon("plus")}</button>
         ${(S.data?.makineler || []).length ? html`<a class="icon-btn xs sb-add" href="#/sistem" aria-label="${L("Bağlantıları yönet", "Manage connections")}" title="${L("Bağlantıları yönet", "Manage connections")}">${icon("sliders")}</a>` : ""}
       </span></div>
-      ${machine({ id: "", label: L("Bu Mac", "This Mac"), sub: L("Bu bilgisayardaki Docker", "Docker on this computer"), ic: "frontend", current: !onRemote })}
+      ${machine({ id: "", label: L(here("", true), hereEn(true)), sub: L(`${here("teki", true)} Docker`, `Docker on ${hereEn()}`), ic: "frontend", current: !onRemote })}
       ${(S.data?.makineler || []).map((mc) => machine({ id: mc.name, label: mc.desc || mc.name, sub: `${mc.name} · ${mc.host || mc.kind}`, ic: "globe", current: mc.current }))}
     </div>`;
   patch($("#sb-nav"), html`
@@ -178,8 +179,8 @@ function renderEngineState() {
     const r = d.platform.remote;
     content = emptyState({
       icon: "server", title: L(`${r.context || r.host} sunucusuna ulaşılamıyor`, `Can't reach ${r.context || r.host}`),
-      text: L(`Uzak Docker (${r.host}) yanıt vermiyor. İnternet ya da VPN bağlantını ve sunucunun açık olduğunu kontrol et. Bu arada bu Mac'teki Docker'a dönebilirsin.`,
-        `The remote Docker (${r.host}) isn't responding. Check your internet or VPN connection and that the server is up. Meanwhile you can switch back to the Docker on this Mac.`),
+      text: L(`Uzak Docker (${r.host}) yanıt vermiyor. İnternet ya da VPN bağlantını ve sunucunun açık olduğunu kontrol et. Bu arada ${here("teki")} Docker'a dönebilirsin.`,
+        `The remote Docker (${r.host}) isn't responding. Check your internet or VPN connection and that the server is up. Meanwhile you can switch back to the Docker on ${hereEn()}.`),
       action: html`<button class="btn" data-global="retry-engine">${icon("refresh")}${L("Tekrar dene", "Try again")}</button>
         <button class="btn primary" data-global="use-local">${icon("server")}${engineOpenLabel("remote")}</button>`,
     });
@@ -188,10 +189,20 @@ function renderEngineState() {
     content = d.docker.reason === "yok"
       ? emptyState({
         icon: "download", title: L("Docker yüklü değil", "Docker isn't installed"),
-        text: L("Bu uygulama Docker'ı yönetir. Önce bir Docker motoru kurman gerekiyor: Mac için en hafifi OrbStack, en bilineni Docker Desktop. Kurduktan sonra bu sayfa kendiliğinden yenilenir.",
-          "This app manages Docker, so you need a Docker engine first: OrbStack is the lightest on a Mac, Docker Desktop the best known. This page refreshes by itself once it's installed."),
-        action: html`<a class="btn primary" href="https://orbstack.dev" target="_blank" rel="noopener">${icon("download")}${L("OrbStack'i indir", "Download OrbStack")}</a>
-          <a class="btn" href="https://www.docker.com/products/docker-desktop/" target="_blank" rel="noopener">${icon("download")}${L("Docker Desktop'ı indir", "Download Docker Desktop")}</a>`,
+        text: onMac()
+          ? L("Bu uygulama Docker'ı yönetir. Önce bir Docker motoru kurman gerekiyor: Mac için en hafifi OrbStack, en bilineni Docker Desktop. Kurduktan sonra bu sayfa kendiliğinden yenilenir.",
+            "This app manages Docker, so you need a Docker engine first: OrbStack is the lightest on a Mac, Docker Desktop the best known. This page refreshes by itself once it's installed.")
+          : onWin()
+            ? L("Bu uygulama Docker'ı yönetir. Önce Docker Desktop'ı kurman gerekiyor. Kurduktan sonra bu sayfa kendiliğinden yenilenir.",
+              "This app manages Docker, so you need Docker Desktop first. This page refreshes by itself once it's installed.")
+            : L("Bu uygulama Docker'ı yönetir. Önce Docker'ı kurman gerekiyor (Docker Engine ya da Docker Desktop). Kurduktan sonra bu sayfa kendiliğinden yenilenir.",
+              "This app manages Docker, so you need to install Docker first (Docker Engine or Docker Desktop). This page refreshes by itself once it's installed."),
+        action: onMac()
+          ? html`<a class="btn primary" href="https://orbstack.dev" target="_blank" rel="noopener">${icon("download")}${L("OrbStack'i indir", "Download OrbStack")}</a>
+            <a class="btn" href="https://www.docker.com/products/docker-desktop/" target="_blank" rel="noopener">${icon("download")}${L("Docker Desktop'ı indir", "Download Docker Desktop")}</a>`
+          : onWin()
+            ? html`<a class="btn primary" href="https://www.docker.com/products/docker-desktop/" target="_blank" rel="noopener">${icon("download")}${L("Docker Desktop'ı indir", "Download Docker Desktop")}</a>`
+            : html`<a class="btn primary" href="https://docs.docker.com/engine/install/" target="_blank" rel="noopener">${icon("download")}${L("Kurulum rehberi", "Install guide")}</a>`,
       })
       : emptyState({
         icon: "power", title: L(`${d.platform?.engine_name || "Docker"} kapalı`, `${d.platform?.engine_name || "Docker"} is not running`),
@@ -200,7 +211,8 @@ function renderEngineState() {
         action: html`<button class="btn primary lg" data-global="docker-ac">${icon("power")}${engineOpenLabel(kind)}</button>`,
       });
   }
-  const down = !!content;
+  // Sistem sayfası motor kapalıyken de açılabilsin: dil, bağlantılar, tam kontrol oradan değiştirilir.
+  const down = !!content && activeNav !== "system";
   document.body.classList.toggle("engine-down", down);
   screen.hidden = !down;
   patch(screen, content);
@@ -210,11 +222,16 @@ function renderEngineState() {
 let _pollTimer = null;
 let _booted = false;
 let _prefsLoaded = false;
+// Bağlam ya da dil değişince artar. Köprü çağrıları paralel çalıştığı için eski bir isteğin cevabı sonradan
+// gelebilir (ör. ulaşılamayan sunucuda 15 sn bekleyen /api/durum); böyle cevaplar yok sayılır.
+let _gen = 0;
 async function refresh() {
   clearTimeout(_pollTimer);
+  const gen = _gen;
   const wasDown = !S.data?.docker?.ok;
   try {
     const data = await api("/api/durum");
+    if (gen !== _gen) return;  // bu arada başka sunucuya/dile geçildi; yenisi kendi zamanlayıcısını kurar
     S.data = data;
     S.offline = false;
     // Tercihler ilk başarılı cevapla yüklenir. Pencere açılırken köprü henüz hazır değilse ilk çağrı boşa gider;
@@ -228,6 +245,7 @@ async function refresh() {
     }
     mergeJobs(data.jobs || []);
   } catch {
+    if (gen !== _gen) return;
     S.offline = true;
   }
   renderRemoteBanner();
@@ -238,13 +256,16 @@ async function refresh() {
   if (!_booted) { _booted = true; Router.render(); refreshBadges(); }
   else if (wasDown && S.data?.docker?.ok) { Router.current?.view.unmount?.(); Router.current = null; Router.render(); }
   const busy = [...S.jobs.values()].some((j) => j.status === "calisiyor");
+  clearTimeout(_pollTimer);  // aynı anda iki yenileme bittiyse iki zamanlayıcı kalmasın
   _pollTimer = setTimeout(refresh, !_prefsLoaded ? 400 : document.hidden ? 12000 : busy ? 1000 : 3000);
 }
 
 async function refreshBadges() {
   if (!S.data?.docker?.ok) return;
-  try { S.badges.conflicts = (await api("/api/kapilar")).conflicts.length; } catch { /* yok say */ }
-  try { const p = (await api("/api/temizlik")).plan; S.badges.reclaim = p.cache.size + p.dangling.size; } catch { /* yok say */ }
+  const gen = _gen;
+  try { const n = (await api("/api/kapilar")).conflicts.length; if (gen === _gen) S.badges.conflicts = n; } catch { /* yok say */ }
+  try { const p = (await api("/api/temizlik")).plan; if (gen === _gen) S.badges.reclaim = p.cache.size + p.dangling.size; } catch { /* yok say */ }
+  if (gen !== _gen) return;  // başka sunucuya geçilmiş: eski makinenin rozetleri gösterilmesin
   renderSidebar();
   bus.emit("badges");
 }
@@ -259,7 +280,7 @@ document.addEventListener("click", async (e) => {
   const g = t.closest("[data-global]");
   if (g) {
     const a = g.dataset.global;
-    if (a === "yeni") openNew();
+    if (a === "yeni" && !safeModeBlocked()) openNew();
     if (a === "sunucu-ekle") openAddRemote(() => refresh());
     if (a === "help") openHelp();
     if (a === "palette") Palette.open();
@@ -309,6 +330,8 @@ document.addEventListener("click", (e) => {
 // ---------- Uzak Docker ------------------------------------------------------------------
 /** Başka bir Docker'a geçildikten sonra: eski motorun verileri, rozetleri ve grafikleri temizlenir. */
 async function afterContextChange() {
+  _gen++;
+  TermHub.closeAll();  // açık terminaller eski sunucudaki konteynerlere bağlıydı
   S.data = null;
   S.catalog = null;
   S.stats = {};
@@ -352,11 +375,11 @@ function renderRemoteBanner() {
     <span><b>${L("Uzak sunucu", "Remote server")}: ${r.context || r.host}</b> <span class="rb-addr">${r.user ? r.user + "@" : ""}${r.host}${r.port ? ":" + r.port : ""}</span></span>
     <span class="rb-sep">·</span>
     <span class="rb-mode">${!ok ? L("Bağlantı yok", "Not connected")
-      : r.guvenli ? L("Güvenli mod: silme, kurulum ve temizlik kapalı", "Safe mode: delete, install and cleanup are off")
+      : r.guvenli ? L("Güvenli mod: silme, kurulum, temizlik ve terminal kapalı", "Safe mode: delete, install, cleanup and terminal are off")
       : L("Tam kontrol açık", "Full control is on")}</span>
     <span class="grow"></span>
     ${r.context ? html`<button class="rb-btn" data-full-ctl="${r.context}" data-on="${r.guvenli ? "1" : ""}">${icon(r.guvenli ? "lock" : "shield")}${r.guvenli ? L("Tam kontrolü aç…", "Allow full control…") : L("Güvenli moda al", "Back to safe mode")}</button>` : ""}
-    <button class="rb-btn" data-machine="">${icon("frontend")}${L("Bu Mac'e dön", "Back to this Mac")}</button>`);
+    <button class="rb-btn" data-machine="">${icon("frontend")}${L(`${here("e", true)} dön`, `Back to ${hereEn()}`)}</button>`);
 }
 
 async function toggleFullControl(name, on) {
@@ -380,7 +403,7 @@ async function toggleFullControl(name, on) {
 async function useLocalDocker() {
   try {
     const r = await api("/api/baglam/yerel", {});
-    flash(L(`Bu Mac'teki Docker'a dönüldü (${r.ad})`, `Switched back to the Docker on this Mac (${r.ad})`));
+    flash(L(`${here("teki", true)} Docker'a dönüldü (${r.ad})`, `Switched back to the Docker on ${hereEn()} (${r.ad})`));
     await afterContextChange();
   } catch (err) { flash(err.message, true); }
 }
@@ -389,9 +412,9 @@ async function openTunnel(port) {
   try {
     const tn = (await api("/api/tunel/ac", { kapi: port })).tunel;
     flash(tn.local === tn.remote
-      ? L(`Tünel açık: bu Mac'teki localhost:${tn.local} artık sunucudaki ${tn.remote} numaralı kapıya gider.`, `Tunnel open: localhost:${tn.local} on this Mac now reaches ${tn.remote} on the server.`)
-      : L(`Tünel açık: localhost:${tn.local} → sunucu:${tn.remote}. ${tn.remote} bu Mac'te dolu olduğu için adreste ${tn.local} kullan.`,
-        `Tunnel open: localhost:${tn.local} → server:${tn.remote}. ${tn.remote} is taken on this Mac, so use ${tn.local} in the address.`));
+      ? L(`Tünel açık: ${here("teki")} localhost:${tn.local} artık sunucudaki ${tn.remote} numaralı kapıya gider.`, `Tunnel open: localhost:${tn.local} on ${hereEn()} now reaches ${tn.remote} on the server.`)
+      : L(`Tünel açık: localhost:${tn.local} → sunucu:${tn.remote}. ${tn.remote} ${here("te")} dolu olduğu için adreste ${tn.local} kullan.`,
+        `Tunnel open: localhost:${tn.local} → server:${tn.remote}. ${tn.remote} is taken on ${hereEn()}, so use ${tn.local} in the address.`));
   } catch (err) { flash(err.message, true); }
 }
 
@@ -414,14 +437,17 @@ document.addEventListener("keydown", (e) => {
   const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || "") || document.activeElement?.isContentEditable;
   if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); Palette.el?.open ? Palette.close() : Palette.open(); return; }
   if (Modal.el.open || Palette.el?.open) return;
-  if (mod && e.key.toLowerCase() === "n") { e.preventDefault(); openNew(); return; }
+  if (mod && e.key.toLowerCase() === "n") { e.preventDefault(); if (!safeModeBlocked()) openNew(); return; }
   if (mod && /^[1-9]$/.test(e.key)) {
     const n = NAV.find((x) => x.key === e.key);
     if (n) { e.preventDefault(); Router.go(n.path); }
     return;
   }
-  if (mod && e.key === "[") { e.preventDefault(); history.back(); return; }
-  if (mod && e.key === "]") { e.preventDefault(); history.forward(); return; }
+  // AltGr, Windows'ta Ctrl+Alt olarak gelir; Türkçe/Almanca klavyede [ ve ] AltGr ile yazılır. Yazarken ya da
+  // AltGr basılıyken geri/ileri gitme (karakter kaybolup sayfa değişiyordu).
+  const altGr = e.altKey || e.getModifierState?.("AltGraph");
+  if (mod && !altGr && !typing && e.key === "[") { e.preventDefault(); history.back(); return; }
+  if (mod && !altGr && !typing && e.key === "]") { e.preventDefault(); history.forward(); return; }
   if (e.key === "Escape" && Menu.el) { Menu.close(); return; }
   if (!typing && e.key === "/") {
     const s = $("#main input[type=search]");

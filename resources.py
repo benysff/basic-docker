@@ -156,6 +156,8 @@ def list_images():
 
 
 def image_detail(ref):
+    if not ds.IMAGE_RE.match(ref or "") and not re.fullmatch(r"(sha256:)?[0-9a-f]{12,64}", ref or ""):
+        raise UserError(L("Geçersiz kalıp adı.", "Invalid image name."))
     code, out, err = ds.docker("image", "inspect", ref, timeout=20)
     if code != 0:
         raise UserError(L("Kalıp bulunamadı.", "Image not found."))
@@ -186,6 +188,8 @@ def check_update(ref):
     """Docker Hub'daki (ya da kayıt defterindeki) sürüm yereldekinden yeni mi?"""
     if not ref or ref.endswith(":<none>"):
         raise UserError(L("Etiketsiz kalıp denetlenemez.", "Untagged images can't be checked."))
+    if not ds.IMAGE_RE.match(ref):
+        raise UserError(L("Geçersiz kalıp adı.", "Invalid image name."))
     code, out, _ = ds.docker("image", "inspect", "--format", "{{json .RepoDigests}}", ref, timeout=15)
     try:
         local = {d.split("@", 1)[1] for d in json.loads(out or "[]") if "@" in d} if code == 0 else set()
@@ -381,8 +385,10 @@ def remove_volumes(names):
 BUILTIN_NETS = {
     "bridge": ("Docker'ın varsayılan ağı. Buradaki parçalar birbirini adıyla bulamaz; sadece IP ile konuşur.",
                "Docker's default network. Containers here can't find each other by name; only by IP."),
-    "host": ("Parça doğrudan bilgisayarın ağını kullanır (Mac'te sınırlı çalışır).",
-             "The container uses your computer's network directly (limited on Mac)."),
+    "host": ("Parça doğrudan bilgisayarın ağını kullanır" + (" (Mac'te sınırlı çalışır)." if ds.IS_MAC else
+                                                            " (Docker Desktop'ta sınırlı çalışır)." if ds.IS_WIN else "."),
+             "The container uses your computer's network directly" + (" (limited on Mac)." if ds.IS_MAC else
+                                                                      " (limited on Docker Desktop)." if ds.IS_WIN else ".")),
     "none": ("Ağ yok: bu ağdaki parça hiçbir yere bağlanamaz.", "No network: a container here can't connect anywhere."),
 }
 
@@ -446,6 +452,8 @@ def create_network(name, internal=False):
 
 
 def remove_network(name):
+    if not ds.NAME_RE.match(name or ""):
+        raise UserError(L("Geçersiz ağ adı.", "Invalid network name."))
     if name in BUILTIN_NETS:
         raise UserError(L("Docker'ın kendi ağları silinemez.", "Docker's built-in networks can't be deleted."))
     code, _, err = ds.docker("network", "rm", name, timeout=30)
@@ -468,7 +476,11 @@ def network_connect(network, container, connect=True):
 # ---------------------------------------------------------------------------
 
 DOCKER_PROCS = {"orbstack", "orbstack helper", "com.docker.backend", "com.docker.vpnkit", "vpnkit", "docker",
-                "com.docker.bac", "com.docker", "vpnkit-bridge", "limactl"}
+                "com.docker.bac", "com.docker", "vpnkit-bridge", "limactl",
+                # Windows (Docker Desktop / WSL2)
+                "wslrelay", "docker desktop", "com.docker.proxy", "dockerd", "com.docker.build"}
+# Windows'un kendi servisleri (kapı haritasında "sistem" olarak gösterilir)
+WINDOWS_PROCS = {"system", "svchost", "lsass", "wininit", "services", "spoolsv", "searchindexer", "msedgewebview2"}
 # işlem adı -> (başlık, açıklama, İngilizce başlık, İngilizce açıklama)
 KNOWN_PROCS = {
     "controlce": ("macOS AirPlay Alıcısı",
@@ -481,12 +493,12 @@ KNOWN_PROCS = {
                  "macOS Continuity (Handoff)", "macOS service that connects your Apple devices."),
     "ardagent": ("macOS Ekran Paylaşma", "Uzaktan yönetim/ekran paylaşma servisi.",
                  "macOS Screen Sharing", "Remote management / screen sharing service."),
-    "postgres": ("Bilgisayarındaki PostgreSQL", "Docker dışında, doğrudan Mac'e kurulu bir veritabanı (ör. Homebrew/Postgres.app).",
-                 "PostgreSQL on your Mac", "A database installed directly on your Mac, outside Docker (e.g. Homebrew/Postgres.app)."),
-    "mysqld": ("Bilgisayarındaki MySQL", "Docker dışında, doğrudan Mac'e kurulu bir MySQL.",
-               "MySQL on your Mac", "MySQL installed directly on your Mac, outside Docker."),
-    "redis-ser": ("Bilgisayarındaki Redis", "Docker dışında, doğrudan Mac'e kurulu bir Redis.",
-                  "Redis on your Mac", "Redis installed directly on your Mac, outside Docker."),
+    "postgres": ("Bilgisayarındaki PostgreSQL", "Docker dışında, doğrudan bilgisayara kurulu bir veritabanı.",
+                 "PostgreSQL on your computer", "A database installed directly on your computer, outside Docker."),
+    "mysqld": ("Bilgisayarındaki MySQL", "Docker dışında, doğrudan bilgisayara kurulu bir MySQL.",
+               "MySQL on your computer", "MySQL installed directly on your computer, outside Docker."),
+    "redis-ser": ("Bilgisayarındaki Redis", "Docker dışında, doğrudan bilgisayara kurulu bir Redis.",
+                  "Redis on your computer", "Redis installed directly on your computer, outside Docker."),
     "ollama": ("Ollama", "Yerel model sunucusu.", "Ollama", "Local model server."),
     "node": ("Node.js programı", "Bir terminalde çalışan Node.js uygulaması (ör. npm run dev).",
              "Node.js program", "A Node.js app running in a terminal (e.g. npm run dev)."),
@@ -500,8 +512,39 @@ KNOWN_PROCS = {
 }
 
 
+def _listening_windows():
+    """Windows: netstat + tasklist. Durum sütunu dile göre değiştiği için (ör. DİNLİYOR) dinleyen soket,
+    uzak adresi :0 olmasından tanınır."""
+    import csv
+    try:
+        ns = subprocess.run(["netstat", "-ano"], capture_output=True, timeout=15)
+        tl = subprocess.run(["tasklist", "/fo", "csv", "/nh"], capture_output=True, timeout=15)
+    except (OSError, subprocess.TimeoutExpired):
+        return {}
+    names = {}
+    for row in csv.reader(tl.stdout.decode("utf-8", "replace").splitlines()):
+        if len(row) >= 2 and row[1].isdigit():
+            names[int(row[1])] = row[0][:-4] if row[0].lower().endswith(".exe") else row[0]
+    out = {}
+    for line in ns.stdout.decode("utf-8", "replace").splitlines():
+        parts = line.split()
+        if len(parts) < 5 or not parts[0].upper().startswith("TCP") or not parts[2].endswith(":0") or not parts[-1].isdigit():
+            continue
+        addr, _, port_s = parts[1].rpartition(":")
+        if not port_s.isdigit():
+            continue
+        pid = int(parts[-1])
+        addr = addr.strip("[]")
+        lst = out.setdefault(int(port_s), [])
+        if not any(x["pid"] == pid and x["addr"] == addr for x in lst):
+            lst.append({"proc": names.get(pid, "System" if pid == 4 else f"PID {pid}"), "pid": pid, "addr": addr})
+    return out
+
+
 def _listening():
-    """lsof ile dinlenen TCP kapılarını okur: {port: [{proc, pid, addr}]}"""
+    """Dinlenen TCP kapılarını okur: {port: [{proc, pid, addr}]} (macOS/Linux: lsof, Windows: netstat)"""
+    if ds.IS_WIN:
+        return _listening_windows()
     try:
         p = subprocess.run(["lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-F", "pcn"],
                            capture_output=True, text=True, timeout=15)
@@ -575,6 +618,8 @@ def port_map():
                          "scope": _scope(addrs), "pid": h["pid"], "proc": h["proc"]})
             continue
         known = None
+        if pname in WINDOWS_PROCS:
+            known = (L("Windows servisi", "Windows service"), L("Windows'un kendi servisi.", "A service that is part of Windows."))
         for key, val in KNOWN_PROCS.items():
             if pname.startswith(key):
                 known = (L(val[0], val[2]), L(val[1], val[3]))
@@ -584,7 +629,7 @@ def port_map():
         rows.append({"port": port, "owner": "process", "proc": h["proc"], "pid": h["pid"],
                      "title": known[0] if known else h["proc"],
                      "desc": known[1] if known else L("Bilgisayarında çalışan bir program.", "A program running on your computer."),
-                     "scope": _scope(addrs), "system": pname in ("controlce", "rapportd", "ardagent")})
+                     "scope": _scope(addrs), "system": pname in ("controlce", "rapportd", "ardagent") or pname in WINDOWS_PROCS})
     # Çakışmalar: kapalı bir parçanın istediği kapıyı şu an başkası tutuyor
     conflicts = []
     by_port = {r["port"]: r for r in rows}
@@ -701,25 +746,31 @@ def run_cleanup(opts):
 
     def run(job):
         before = total_now()
+        failed = 0  # başarısız adımlar: sonuç mesajı "her şey tamam" demesin
         if containers:
             job.log(L(f"{len(containers)} kapalı parça siliniyor…", f"Deleting {len(containers)} stopped container(s)…"))
-            ds._stream(job, ["rm", *containers], timeout=600)
+            failed += ds._stream(job, ["rm", *containers], timeout=600) != 0
         if dangling:
             job.log(L("Sahipsiz kalıp katmanları siliniyor…", "Deleting dangling image layers…"))
-            ds._stream(job, ["image", "prune", "-f"], timeout=900)
+            failed += ds._stream(job, ["image", "prune", "-f"], timeout=900) != 0
         for ref in images:
             code, _, err = ds.docker("image", "rm", ref, timeout=180)
             job.log(L(f"Kalıp silindi: {ref}", f"Image deleted: {ref}") if code == 0
                     else L(f"Kalıp silinemedi ({ref}): ", f"Could not delete image ({ref}): ") + err.strip()[-200:])
+            failed += code != 0
         if cache:
             job.log(L("Derleme önbelleği siliniyor…", "Deleting the build cache…"))
-            ds._stream(job, ["builder", "prune", "-af"], timeout=1800)
+            failed += ds._stream(job, ["builder", "prune", "-af"], timeout=1800) != 0
         for v in volumes:
             code, _, err = ds.docker("volume", "rm", v, timeout=60)
             job.log(L(f"Veri kutusu silindi: {v}", f"Volume deleted: {v}") if code == 0
                     else L(f"Veri kutusu silinemedi ({v}): ", f"Could not delete volume ({v}): ") + err.strip()[-200:])
+            failed += code != 0
         invalidate_df()
         freed = max(0, before - total_now())
+        if failed:
+            return L(f"Temizlik bitti ama {failed} adım başarısız oldu (ayrıntılara bak). Yaklaşık {human_size(freed)} yer açıldı.",
+                     f"Cleanup finished but {failed} step(s) failed (see the details). About {human_size(freed)} freed.")
         return L(f"Temizlik bitti. Yaklaşık {human_size(freed)} yer açıldı.", f"Cleanup done. About {human_size(freed)} freed.")
 
     return ds.start_job(L("Disk temizleniyor", "Cleaning up disk"), "_temizlik", run)

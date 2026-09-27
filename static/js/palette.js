@@ -35,16 +35,17 @@ const Palette = {
       out.push({ group: T("logs"), icon: "logs", label: L(`${c.name} kayıtları`, `${c.name} logs`), run: () => Router.go(`/parca/${encodeURIComponent(c.id)}/kayitlar`) });
     }
     const cmds = [
-      ["plus", L("Yeni ekle", "Add new"), () => openNew(), modText("⌘N")],
-      ["db", L("Hazır veritabanı kur", "Set up a ready-made database"), () => openNew("sablonlar")],
-      ["folder", L("Proje klasöründen kur (docker-compose)", "Set up from a project folder (docker-compose)"), () => openNew("compose")],
-      ["download", L(`${T("image")} indir`, "Pull an image"), () => openPull()],
+      // Güvenli moddaki sunucuda kurulum/temizlik komutları listelenmez.
+      !safeModeOn() && ["plus", L("Yeni ekle", "Add new"), () => openNew(), modText("⌘N")],
+      !safeModeOn() && ["db", L("Hazır veritabanı kur", "Set up a ready-made database"), () => openNew("sablonlar")],
+      !safeModeOn() && ["folder", L("Proje klasöründen kur (docker-compose)", "Set up from a project folder (docker-compose)"), () => openNew("compose")],
+      !safeModeOn() && ["download", L(`${T("image")} indir`, "Pull an image"), () => openPull()],
       ["update", L("Kalıp güncellemelerini denetle", "Check for image updates"), () => runJob("/api/kalip/denetle-hepsi", {})],
-      ["sparkles", L("Disk temizliği", "Disk cleanup"), () => Router.go("/temizlik")],
-      ["rocket", L("Yeni çalışma seti", "New work set"), () => openSetEditor()],
+      !safeModeOn() && ["sparkles", L("Disk temizliği", "Disk cleanup"), () => Router.go("/temizlik")],
+      !safeModeOn() && ["rocket", L("Yeni çalışma seti", "New work set"), () => openSetEditor()],
       ["archive", L("Yedekleri aç", "Open backups"), () => Router.go("/kutular/yedekler")],
       ["server", L("Uzak Docker ekle (SSH)", "Add remote Docker (SSH)"), () => openAddRemote(() => Router.go("/sistem"))],
-      S.data?.platform?.remote && ["server", L("Bu Mac'teki Docker'a dön", "Switch to the Docker on this Mac"), () => useLocalDocker()],
+      S.data?.platform?.remote && ["server", L(`${here("teki", true)} Docker'a dön`, `Switch to the Docker on ${hereEn()}`), () => useLocalDocker()],
       ["globe", L("Switch to English", "Türkçeye geç"), () => setLanguage(isEN() ? "tr" : "en")],
       ["moon", L("Temayı değiştir (açık/koyu)", "Toggle theme (light/dark)"), () => { S.prefs.tema = document.documentElement.dataset.theme === "dark" ? "acik" : "koyu"; applyTheme(); api("/api/ayarlar/kaydet", { tema: S.prefs.tema }).catch(() => {}); }],
       !isEN() && ["sliders", S.prefs.dil === "teknik" ? "Sade Türkçeye geç" : "Teknik terimlere geç", () => { S.prefs.dil = S.prefs.dil === "teknik" ? "sade" : "teknik"; api("/api/ayarlar/kaydet", { dil: S.prefs.dil }).catch(() => {}); renderSidebar(); Router.current?.view.unmount?.(); Router.current = null; Router.render(); }],
@@ -56,7 +57,7 @@ const Palette = {
 
   score(item, qq) {
     if (!qq) return 1;
-    const hay = (item.label + " " + (item.sub || "") + " " + item.group).toLocaleLowerCase(loc());
+    const hay = fold(item.label + " " + (item.sub || "") + " " + item.group);
     if (hay.startsWith(qq)) return 100;
     const i = hay.indexOf(qq);
     if (i >= 0) return 80 - Math.min(i, 40);
@@ -120,7 +121,7 @@ const Palette = {
   },
 
   render(query, keepScroll = false) {
-    const qq = query.trim().toLocaleLowerCase(loc());
+    const qq = fold(query.trim());
     const G = this.groups();
     let list = this.items.map((it) => ({ it, s: this.score(it, qq) })).filter((x) => x.s > 0);
     if (qq) list.sort((a, b) => b.s - a.s);

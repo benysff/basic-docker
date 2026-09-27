@@ -26,7 +26,7 @@ from docker_service import L, UserError
 
 HOST_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9._-]{0,251}[A-Za-z0-9])?$")
 USER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]{0,31}$")
-CTX_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.+-]{0,62}$")
+CTX_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$")
 LOOPBACK = ("localhost", "127.0.0.1", "::1")
 # Uygulamanın açtığı tünelleri kullanıcının kendi ssh tünellerinden ayırmak için komut satırındaki işaret
 TUNNEL_TAG = "BASICDOCKER_TUNNEL=1"
@@ -75,22 +75,46 @@ SSH = _setup_ssh_mux()
 # Şu an hangi Docker'a bağlıyız?
 # ---------------------------------------------------------------------------
 
+_ep_lock = threading.Lock()
+_on_change = []  # bağlam uygulamanın dışından (ör. terminalde `docker context use`) değişince çağrılır
+
+
 def _current(max_age=10):
-    if time.time() - _ep_cache["t"] > max_age:
-        endpoint, name = os.environ.get("DOCKER_HOST", ""), ""
-        if ds.DOCKER:
-            code, out, _ = ds.docker("context", "show", timeout=8)
-            if code == 0:
-                name = out.strip()
-            if not endpoint:
-                code, out, _ = ds.docker("context", "inspect", "--format", "{{.Endpoints.docker.Host}}", timeout=8)
-                endpoint = out.strip() if code == 0 else ""
-        _ep_cache.update(t=time.time(), endpoint=endpoint, name=name)
-    return _ep_cache["endpoint"], _ep_cache["name"]
+    """(uç nokta, bağlam adı). Uç nokta okunamazsa None (güvenli mod bunu "bilinmiyor" sayar).
+
+    Önbellek, komutların kullanacağı ortamın bağlamına göre tutulur. Okuma sürerken bağlam değişirse
+    (invalidate) eski sonuç önbelleğe yazılmaz; yoksa birkaç saniye yanlış sunucu gösterilebiliyordu."""
+    env = ds.cur_env()
+    key = (env.get("DOCKER_CONTEXT", ""), env.get("DOCKER_HOST", ""))
+    c = _ep_cache
+    if c.get("key") == key and time.time() - c["t"] <= max_age:
+        return c["endpoint"], c["name"]
+    gen = c.get("gen", 0)
+    endpoint, name = key[1], ""
+    if ds.DOCKER:
+        code, out, _ = ds.docker("context", "show", timeout=8)
+        name = out.strip() if code == 0 else ""
+        if not endpoint:
+            code, out, _ = ds.docker("context", "inspect", "--format", "{{.Endpoints.docker.Host}}", timeout=8)
+            endpoint = out.strip() if code == 0 and out.strip() else None
+    changed = False
+    with _ep_lock:
+        if c.get("gen", 0) == gen:
+            changed = c.get("key") == key and c["t"] > 0 and (c["endpoint"], c["name"]) != (endpoint, name)
+            c.update(t=time.time(), endpoint=endpoint, name=name, key=key)
+    if changed:
+        for fn in list(_on_change):
+            try:
+                fn()
+            except Exception:
+                pass
+    return endpoint, name
 
 
 def invalidate():
-    _ep_cache["t"] = 0.0
+    with _ep_lock:
+        _ep_cache["t"] = 0.0
+        _ep_cache["gen"] = _ep_cache.get("gen", 0) + 1
 
 
 def parse_endpoint(endpoint):
@@ -173,6 +197,8 @@ def remove_context(name):
     code, _, err = ds.docker("context", "rm", name, timeout=15)
     if code != 0:
         raise UserError(L("Silinemedi: ", "Could not remove: ") + err.strip()[-200:])
+    set_full_control(name, False)  # aynı adla eklenecek başka bir sunucu tam kontrolü miras almasın
+    invalidate_machines()
     return name
 
 
@@ -208,10 +234,17 @@ def explain(err):
                  "This user has no access to Docker on the server. Run this on the server, then log out and in again: "
                  "sudo usermod -aG docker $USER")
     if "permission denied (publickey" in e or "permission denied, please try again" in e or "too many authentication failures" in e:
+        if ds.IS_WIN:
+            return L("Sunucu SSH anahtarını kabul etmedi. Anahtarını sunucuya yükle (Sunucu ekle penceresi komutu gösterir); "
+                     "anahtarın şifreliyse PowerShell'de ssh-agent hizmetini başlatıp ssh-add ile ekle. Sonra tekrar dene.",
+                     "The server did not accept your SSH key. Install your key on the server (the Add server dialog shows the "
+                     "command); if your key has a passphrase, start the ssh-agent service in PowerShell and add it with ssh-add. "
+                     "Then try again.")
+        agent = "ssh-add --apple-use-keychain" if ds.IS_MAC else "ssh-add"
         return L("Sunucu SSH anahtarını kabul etmedi. Terminalde bir kez ssh-copy-id kullanici@sunucu çalıştır; "
-                 "anahtarın şifreliyse ssh-add --apple-use-keychain ile ekle. Sonra tekrar dene.",
+                 f"anahtarın şifreliyse {agent} ile ekle. Sonra tekrar dene.",
                  "The server did not accept your SSH key. Run ssh-copy-id user@server once in Terminal; "
-                 "if your key has a passphrase, add it with ssh-add --apple-use-keychain. Then try again.")
+                 f"if your key has a passphrase, add it with {agent}. Then try again.")
     if "host key verification failed" in e or "remote host identification has changed" in e:
         return L("Sunucunun kimliği (host key) kayıtlı olandan farklı. Güvenlik için bağlanılmadı. "
                  "Sunucunun değiştiğinden eminsen: ssh-keygen -R sunucu",
@@ -236,20 +269,6 @@ def explain(err):
                  "TLS certificate problem. The certificate folder must contain ca.pem, cert.pem and key.pem.")
     last = [ln for ln in (err or "").strip().splitlines() if ln.strip()]
     return last[-1][-300:] if last else L("Bağlanılamadı.", "Could not connect.")
-
-
-def _check_ssh(user, host, port):
-    try:
-        p = subprocess.run([SSH, *_ssh_target(user, host, port), "docker", "version", "--format", "'{{.Server.Version}}'"],
-                           capture_output=True, text=True, timeout=30, env=ds.ENV, stdin=subprocess.DEVNULL)
-    except subprocess.TimeoutExpired:
-        raise UserError(explain("timed out"))
-    except OSError:
-        raise UserError(L("Bu Mac'te ssh komutu bulunamadı.", "The ssh command was not found on this Mac."))
-    version = p.stdout.strip()
-    if p.returncode != 0 or not version:
-        raise UserError(explain(p.stderr or p.stdout))
-    return version
 
 
 def _tls_args(tls_dir):
@@ -311,6 +330,8 @@ def add_remote(p):
         if status == "hostkey":
             return {"gerekli": "hostkey", "parmak_izi": info}
         if status == "parola":
+            if ds.IS_WIN:  # Windows'ta ssh-copy-id yok: anahtarı yüklemek için tek satırlık komut göster
+                return {"gerekli": "elle", "komut": manual_key_command(user, host, port), "anahtar_var": info}
             return {"gerekli": "parola", "anahtar_var": info}
         version = info
         spec = f"host=ssh://{user + '@' if user else ''}{host}{':' + port if port else ''}"
@@ -321,6 +342,7 @@ def add_remote(p):
         version = _check_tcp(url, tls)
         spec = f"host={url}" + (f",ca={tls['ca']},cert={tls['cert']},key={tls['key']}" if tls else "")
 
+    set_full_control(name, False)  # aynı adlı eski bir bağlantının "tam kontrol" izni yeni sunucuya geçmesin
     args = ["context", "create", name, "--docker", spec]
     if desc:
         args += ["--description", desc]
@@ -340,7 +362,11 @@ _tlock = threading.Lock()
 
 def _local_port_free(port):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # ssh de böyle dinler; TIME_WAIT'teki kapı boş sayılır
+    if ds.IS_WIN:
+        # Windows'ta SO_REUSEADDR başka programın dinlediği kapıya da bağlandırır; tam tersini iste.
+        s.setsockopt(socket.SOL_SOCKET, getattr(socket, "SO_EXCLUSIVEADDRUSE", socket.SO_REUSEADDR), 1)
+    else:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # ssh de böyle dinler; TIME_WAIT'teki kapı boş sayılır
     try:
         s.bind(("127.0.0.1", port))
         return True
@@ -409,24 +435,30 @@ def open_tunnel(remote_port):
             _stop(t)
         local = _pick_local(remote_port)
         log = tempfile.TemporaryFile()
-        args = [SSH, "-N", "-o", "ControlPath=none", "-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30",
-                "-o", f"SetEnv={TUNNEL_TAG}",
+        # SetEnv işareti artık kalan tünelleri tanımak için (sadece macOS/Linux'ta temizlenir). Windows 10'un eski
+        # OpenSSH'ı (7.7) SetEnv'i tanımıyor ve tünel hiç açılmıyordu; orada eklenmez. ControlPath de orada yok.
+        args = [SSH, "-N", "-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30"]
+        if not ds.IS_WIN:
+            args += ["-o", "ControlPath=none", "-o", f"SetEnv={TUNNEL_TAG}"]
+        args += [
                 "-L", f"127.0.0.1:{local}:127.0.0.1:{remote_port}",
                 *_ssh_target(r["user"], r["host"], r["port"])]
         try:
             proc = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=log, env=ds.ENV)
         except OSError:
-            raise UserError(L("Bu Mac'te ssh komutu bulunamadı.", "The ssh command was not found on this Mac."))
+            raise UserError(L(f"{ds.here('te', True)} ssh komutu bulunamadı.", f"The ssh command was not found on {ds.here_en()}."))
         deadline = time.time() + 15
         while time.time() < deadline:
             if proc.poll() is not None:
                 log.seek(0)
-                raise UserError(explain(log.read().decode("utf-8", "replace")))
+                msg = log.read().decode("utf-8", "replace")
+                log.close()
+                raise UserError(explain(msg))
             if _can_connect(local):
                 break
             time.sleep(0.15)
         else:
-            proc.kill()
+            _stop({"proc": proc, "log": log})
             raise UserError(explain("timed out"))
         if not _probe(local):
             time.sleep(0.3)
@@ -552,7 +584,7 @@ def set_app_context(name):
     if endpoint is None:
         raise UserError(L("Bağlam bulunamadı.", "Context not found."))
     if parse_endpoint(endpoint):
-        ds.ENV["DOCKER_CONTEXT"] = name
+        ds.ENV = {**ds.ENV, "DOCKER_CONTEXT": name}
         ds.update_settings(lambda s: s.__setitem__(APP_CTX_KEY, name))
         invalidate()
         return True
@@ -562,7 +594,8 @@ def set_app_context(name):
 
 def clear_app_context():
     """Uygulamaya özel bağlamı bırakır; uygulama yine terminalle aynı (global) bağlamı kullanır."""
-    had = bool(ds.ENV.pop("DOCKER_CONTEXT", None))
+    had = "DOCKER_CONTEXT" in ds.ENV
+    ds.ENV = {k: v for k, v in ds.ENV.items() if k != "DOCKER_CONTEXT"}
     ds.update_settings(lambda s: s.pop(APP_CTX_KEY, None))
     invalidate()
     return had
@@ -572,7 +605,7 @@ def restore_app_context():
     """Açılışta son seçilen uzak sunucuya dön (bağlam silinmişse unut)."""
     name = ds.load_settings().get(APP_CTX_KEY) or ""
     if name and CTX_RE.match(name) and context_endpoint(name) is not None:
-        ds.ENV["DOCKER_CONTEXT"] = name
+        ds.ENV = {**ds.ENV, "DOCKER_CONTEXT": name}
     elif name:
         clear_app_context()
 
@@ -628,9 +661,17 @@ def set_full_control(name, enabled):
     return {"ad": name, "tam_kontrol": bool(enabled)}
 
 
+def safe_mode_state():
+    """"off": serbest; "on": uzak sunucu güvenli modda; "unknown": hangi Docker'a gidileceği okunamadı."""
+    endpoint, name = _current()
+    if endpoint is None:
+        return "unknown"
+    r = parse_endpoint(endpoint)
+    return "on" if r and name not in safe_mode_names() else "off"
+
+
 def safe_mode_active():
-    r = remote_info()
-    return bool(r) and (r.get("context") or "") not in safe_mode_names()
+    return safe_mode_state() != "off"
 
 
 # ---------------------------------------------------------------------------
@@ -701,14 +742,17 @@ def ssh_preflight(user, host, port):
     Parmak izi bilinmiyorsa sunucuya giriş DENENMEZ (StrictHostKeyChecking=yes, kimlik doğrulamadan önce durur);
     art arda başarısız denemeler OpenSSH'ın PerSourcePenalties korumasını tetikleyip adresi bir süre engelleyebilir.
     """
-    args = [SSH, "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=yes",
-            "-o", "ControlMaster=no", "-o", "ControlPath=none"]
+    args = [SSH, "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=yes"]
+    if not ds.IS_WIN:
+        args += ["-o", "ControlMaster=no", "-o", "ControlPath=none"]
     args += (["-p", port] if port else []) + [f"{user}@{host}" if user else host,
                                               "docker", "version", "--format", "'{{.Server.Version}}'"]
     try:
         p = subprocess.run(args, capture_output=True, text=True, timeout=30, env=ds.ENV, stdin=subprocess.DEVNULL)
     except subprocess.TimeoutExpired:
         raise UserError(explain("timed out"))
+    except OSError:
+        raise UserError(L(f"{ds.here('te', True)} ssh komutu bulunamadı.", f"The ssh command was not found on {ds.here_en()}."))
     version = p.stdout.strip()
     if p.returncode == 0 and version:
         return "tamam", version
@@ -740,19 +784,25 @@ def trust_host(p):
     return {"tamam": True}
 
 
+def manual_key_command(user, host, port):
+    """Windows için: anahtarı sunucuya yükleyen tek satırlık PowerShell komutu (ssh-copy-id'nin yaptığı)."""
+    target = f"{user}@{host}" if user else host
+    port_arg = f"-p {port} " if port else ""
+    return (f'type $env:USERPROFILE\\.ssh\\id_ed25519.pub | ssh {port_arg}{target} '
+            f'"mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"')
+
+
 def install_key(p, password):
     """SSH anahtarını sunucuya yükler. Parola sadece bu işlem için kullanılır, hiçbir yere kaydedilmez."""
     user, host, port = parse_target(p)
     if ds.IS_WIN:
         # Windows'un OpenSSH'ında ssh-copy-id ve sh ile çalışan parola yardımcısı yok.
-        target = f"{user}@{host}" if user else host
+        cmd = manual_key_command(user, host, port)
         raise UserError(L(
-            "Windows'ta parolayla anahtar kurulumu yapılamıyor. PowerShell'de bir kez şunu çalıştır (anahtarın yoksa önce "
-            f"ssh-keygen -t ed25519): type $env:USERPROFILE\\.ssh\\id_ed25519.pub | ssh {target} "
-            "\"mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys\" — sonra tekrar bağlan.",
-            "Setting up the key with a password isn't available on Windows. Run this once in PowerShell (if you have no key, "
-            f"first run ssh-keygen -t ed25519): type $env:USERPROFILE\\.ssh\\id_ed25519.pub | ssh {target} "
-            "\"mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys\" — then connect again."))
+            f"Windows'ta parolayla anahtar kurulumu yapılamıyor. PowerShell'de bir kez şunu çalıştır (anahtarın yoksa önce "
+            f"ssh-keygen -t ed25519): {cmd} — sonra tekrar bağlan.",
+            f"Setting up the key with a password isn't available on Windows. Run this once in PowerShell (if you have no key, "
+            f"first run ssh-keygen -t ed25519): {cmd} — then connect again."))
     if not password:
         raise UserError(L("Parolayı yaz.", "Enter the password."))
     key = os.path.expanduser("~/.ssh/id_ed25519")

@@ -152,16 +152,16 @@ function kbd(keys) {
 
 /** Kayıt satırlarını renklendirir (hata kırmızı, uyarı sarı). */
 function colorLog(text, query = "", hints = {}) {
-  const qq = (query || "").toLocaleLowerCase("tr");
+  const qq = fold(query || "");
   const out = [];
   (text || "").split("\n").forEach((line, i) => {
-    if (qq && !line.toLocaleLowerCase("tr").includes(qq)) return;
+    if (qq && !fold(line).includes(qq)) return;
     let cls = "";
     if (/\b(error|exception|fatal|failed|traceback|panic|critical|hata|refused|denied)\b/i.test(line)) cls = "e";
     else if (/\b(warn|warning|uyarı|deprecated)\b/i.test(line)) cls = "w";
     let body = esc(line);
     if (qq) {
-      const lower = line.toLocaleLowerCase("tr");
+      const lower = fold(line);
       let idx = 0, res = "", pos;
       while ((pos = lower.indexOf(qq, idx)) !== -1) {
         res += esc(line.slice(idx, pos)) + "<mark>" + esc(line.slice(pos, pos + qq.length)) + "</mark>";
@@ -193,11 +193,11 @@ function connNote(conn) {
   if (!r) return "";
   if (r.kind === "tcp") return L(`Adres sunucuda: bilgisayarından bağlanırken localhost yerine ${r.host} yaz.`, `This address is on the server: use ${r.host} instead of localhost when connecting from your computer.`);
   return html`${L("Bu adres sunucuda çalışır. Bilgisayarındaki kod bağlansın diye tünel aç:", "This address works on the server. Open a tunnel so code on your computer can connect:")}
-    <button class="btn xs" data-tunnel="${conn.port}">${icon("link")}${L("Bu Mac'e tünel aç", "Tunnel to this Mac")}</button>`;
+    <button class="btn xs" data-tunnel="${conn.port}">${icon("link")}${L(`${here("e", true)} tünel aç`, `Tunnel to ${hereEn()}`)}</button>`;
 }
 
 /** Motoru açma düğmesinin yazısı (Türkçe ekler motor adına göre değişir). */
 function engineOpenLabel(kind) {
-  if (isEN()) return { orbstack: "Open OrbStack", "docker-desktop": "Open Docker Desktop", colima: "Start Colima", remote: "Switch to local Docker" }[kind] || "Open Docker";
-  return { orbstack: "OrbStack'i aç", "docker-desktop": "Docker Desktop'ı aç", colima: "Colima'yı başlat", remote: "Bu Mac'teki Docker'a dön" }[kind] || "Docker'ı aç";
+  if (isEN()) return { orbstack: "Open OrbStack", "docker-desktop": "Open Docker Desktop", colima: "Start Colima", remote: `Switch to the Docker on ${hereEn()}` }[kind] || "Open Docker";
+  return { orbstack: "OrbStack'i aç", "docker-desktop": "Docker Desktop'ı aç", colima: "Colima'yı başlat", remote: `${here("teki", true)} Docker'a dön` }[kind] || "Docker'ı aç";
 }

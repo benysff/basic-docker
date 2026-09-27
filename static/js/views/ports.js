@@ -17,8 +17,8 @@ const PortsView = {
       <div class="page">
         ${pageHead({
           title: T("port", true),
-          desc: L("Bilgisayarındaki hangi numaralı kapıyı kim kullanıyor? Docker, diğer programlar ve macOS birlikte. “Bu kapı dolu” hatasının sebebini burada bulursun.",
-            "Who is using which port on your computer? Docker, other programs and macOS together. This is where you find out why a port is “already in use”."),
+          desc: L(`Bilgisayarındaki hangi numaralı kapıyı kim kullanıyor? Docker, diğer programlar ve ${onMac() ? "macOS" : onWin() ? "Windows" : "sistem"} birlikte. “Bu kapı dolu” hatasının sebebini burada bulursun.`,
+            `Who is using which port on your computer? Docker, other programs and ${onMac() ? "macOS" : onWin() ? "Windows" : "the system"} together. This is where you find out why a port is “already in use”.`),
           actions: html`<button class="btn" data-retry>${icon("refresh")}${L("Yenile", "Refresh")}</button>`,
         })}
         <div id="pt-alerts"></div>
@@ -90,8 +90,8 @@ const PortsView = {
     patch($("#pt-alerts", this.root), html`
       ${this.data.remote ? callout({
         level: "info", icon: "server", title: L("Uzak Docker", "Remote Docker"),
-        text: L("Sunucudaki parçaların kapıları gösteriliyor; bu Mac'teki programlar listede yok. Bir kapıya bu Mac'ten ulaşmak için bağlantısına tıkla, SSH tüneli kendiliğinden açılır.",
-          "Showing the ports of containers on the server; programs on this Mac aren't listed. Click a port's link to reach it from this Mac; an SSH tunnel opens automatically."),
+        text: L(`Sunucudaki parçaların kapıları gösteriliyor; ${here("teki")} programlar listede yok. Bir kapıya ${here("ten")} ulaşmak için bağlantısına tıkla, SSH tüneli kendiliğinden açılır.`,
+          `Showing the ports of containers on the server; programs on ${hereEn()} aren't listed. Click a port's link to reach it from ${hereEn()}; an SSH tunnel opens automatically.`),
       }) : ""}
       ${conflicts.map((c) => callout({
         level: "warn", icon: "alert",
@@ -110,9 +110,9 @@ const PortsView = {
         title: L(`${lan.length} Docker kapısı ağdaki herkese açık`, `${plural(lan.length, "Docker port")} open to everyone on the network`),
         text: isEN()
           ? html`${lan.map((p) => html`<b class="mono">${p.port}</b> (${p.title}) `)} — other devices on the same Wi-Fi can connect to these too.
-            To allow this Mac only, write the port as <code>"127.0.0.1:8000:8000"</code> in the compose file.`
+            To allow ${onRemoteEngine() ? "the server itself" : hereEn()} only, write the port as <code>"127.0.0.1:8000:8000"</code> in the compose file.`
           : html`${lan.map((p) => html`<b class="mono">${p.port}</b> (${p.title}) `)} — aynı Wi-Fi'deki başka cihazlar da bunlara bağlanabilir.
-          Sadece bu Mac'ten erişilsin istiyorsan compose dosyasında kapıyı <code>"127.0.0.1:8000:8000"</code> biçiminde yaz.`,
+          Sadece ${onRemoteEngine() ? "sunucunun kendisinden" : here("ten")} erişilsin istiyorsan compose dosyasında kapıyı <code>"127.0.0.1:8000:8000"</code> biçiminde yaz.`,
       }) : ""}`);
 
     const counts = {
@@ -149,12 +149,14 @@ const PortsView = {
                   <div class="muted small">${p.owner === "docker" ? html`<a href="${link(`/parca/${p.id}`)}">${p.role}</a> · ${L(`içeride ${p.container_port}`, `${p.container_port} inside`)}`
                     : p.owner === "engine" ? L("Docker motoru", "Docker engine") : html`${p.proc}${p.pid ? html` <span class="mono">(pid ${p.pid})</span>` : ""}`}</div>
                 </div></div></td>
-              <td class="col-md">${p.scope === "lan" ? pill(html`${icon("globe")}${L("Ağa açık", "Open to network")}`, "warn") : pill(html`${icon("lock")}${L("Sadece bu Mac", "This Mac only")}`, "ok")}</td>
+              <td class="col-md">${p.scope === "lan" ? pill(html`${icon("globe")}${L("Ağa açık", "Open to network")}`, "warn") : pill(html`${icon("lock")}${L(onRemoteEngine() ? "Sadece sunucunun kendisi" : `Sadece ${here()}`, onRemoteEngine() ? "Server only" : `${hereEn(true)} only`)}`, "ok")}</td>
               <td class="col-lg small muted">${p.owner === "docker" ? html`<span class="mono">${p.container}</span>${p.url ? L(" · tarayıcıda açılır", " · opens in a browser") : ""}` : p.desc}</td>
               <td class="actions-col"><div class="row-actions">${p.url ? linkChip(p.url, L("Aç", "Open")) : ""}</div></td>
             </tr>`)}</tbody>
         </table>
       </div>
-      <p class="muted small">${L("Sadece “dinleyen” (bağlantı bekleyen) TCP kapıları gösterilir. macOS'un kendi servisleri de listede; onları kapatmak için Sistem Ayarları'nı kullan.", "Only “listening” TCP ports (waiting for connections) are shown. macOS's own services are listed too; use System Settings to turn them off.")}</p>`);
+      <p class="muted small">${onMac() ? L("Sadece “dinleyen” (bağlantı bekleyen) TCP kapıları gösterilir. macOS'un kendi servisleri de listede; onları kapatmak için Sistem Ayarları'nı kullan.", "Only “listening” TCP ports (waiting for connections) are shown. macOS's own services are listed too; use System Settings to turn them off.")
+        : onWin() ? L("Sadece “dinleyen” (bağlantı bekleyen) TCP kapıları gösterilir. Windows'un kendi servisleri de listede; onlara dokunmana gerek yok.", "Only “listening” TCP ports (waiting for connections) are shown. Windows' own services are listed too; you don't need to touch them.")
+        : L("Sadece “dinleyen” (bağlantı bekleyen) TCP kapıları gösterilir.", "Only “listening” TCP ports (waiting for connections) are shown.")}</p>`);
   },
 };

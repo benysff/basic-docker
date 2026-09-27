@@ -48,9 +48,9 @@ const ContainersView = {
   },
 
   list() {
-    const qq = this.query.trim().toLocaleLowerCase(loc());
+    const qq = fold(this.query.trim());
     let list = allContainers();
-    if (qq) list = list.filter((c) => [c.name, c.image, c.role_title, c.app.name, c.service].join(" ").toLocaleLowerCase(loc()).includes(qq));
+    if (qq) list = list.filter((c) => fold([c.name, c.image, c.role_title, c.app.name, c.service].join(" ")).includes(qq));
     if (this.filter === "calisan") list = list.filter((c) => c.running);
     if (this.filter === "kapali") list = list.filter((c) => !c.running);
     if (this.filter === "sorunlu") list = list.filter((c) => c.level === "err" || c.state === "restarting");

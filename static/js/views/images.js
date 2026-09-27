@@ -62,9 +62,9 @@ const ImagesView = {
   },
 
   groups() {
-    const qq = this.query.trim().toLocaleLowerCase(loc());
+    const qq = fold(this.query.trim());
     let list = this.data.images;
-    if (qq) list = list.filter((i) => [i.repo, ...i.tags, i.id].join(" ").toLocaleLowerCase(loc()).includes(qq));
+    if (qq) list = list.filter((i) => fold([i.repo, ...i.tags, i.id].join(" ")).includes(qq));
     if (this.filter === "kullanilan") list = list.filter((i) => i.in_use);
     if (this.filter === "kullanilmayan") list = list.filter((i) => !i.in_use && !i.dangling);
     if (this.filter === "sahipsiz") list = list.filter((i) => i.dangling);
@@ -119,9 +119,9 @@ const ImagesView = {
   menu(im, ref) {
     const r = ref || im.ref;
     return [
-      { label: L("Bu kalıptan parça çalıştır", "Run a container from this image"), icon: "play", onClick: () => openNew("ozel", { image: r || im.id }) },
+      { label: L("Bu kalıptan parça çalıştır", "Run a container from this image"), icon: "play", unsafe: true, onClick: () => openNew("ozel", { image: r || im.id }) },
       r && !im.local_build && { label: L("Yeni sürümü denetle", "Check for a new version"), icon: "update", onClick: () => this.check(r) },
-      r && !im.local_build && { label: L("Yeniden indir (güncelle)", "Pull again (update)"), icon: "download", onClick: () => runJob("/api/kalip/indir", { ref: r }, () => this.load()) },
+      r && !im.local_build && { label: L("Yeniden indir (güncelle)", "Pull again (update)"), icon: "download", unsafe: true, onClick: () => runJob("/api/kalip/indir", { ref: r }, () => this.load()) },
       { label: L("İçini incele (katmanlar, ayarlar)", "Inspect (layers, settings)"), icon: "code", onClick: () => openImageDetail(r || im.full_id) },
       { label: L("Kimliği kopyala", "Copy ID"), icon: "copy", onClick: () => copyText(im.id) },
       "-",
@@ -201,14 +201,14 @@ const ImagesView = {
     patch($("#im-stats", this.root), html`
       <div class="stat"><div class="stat-label">${icon("layers")}${L("Toplam", "Total")}</div><div class="stat-value">${imgs.length}<small>${isEN() ? "images" : T("image")}</small></div><div class="stat-foot">${L(`${fmt.bytes(total)} diskte (yaklaşık)`, `about ${fmt.bytes(total)} on disk`)}</div></div>
       <button class="stat" data-seg="im" data-val="kullanilmayan"><div class="stat-label">${icon("archive")}${L("Kullanılmayan", "Unused")}</div><div class="stat-value">${unused.length}</div><div class="stat-foot">${L(`${fmt.bytes(unused.reduce((n, i) => n + (i.unique_size ?? i.size), 0))} boşaltılabilir`, `${fmt.bytes(unused.reduce((n, i) => n + (i.unique_size ?? i.size), 0))} can be freed`)}</div></button>
-      <button class="stat ${emu.length ? "attention" : ""}" data-seg="im" data-val="emule"><div class="stat-label">${icon("cpu")}${L("Intel (amd64) kalıbı", "Intel (amd64) images")}</div><div class="stat-value">${emu.length}</div><div class="stat-foot">${L(`Mac'in ${this.data.host_arch}; bunlar emülasyonla, yavaş çalışır`, `Your Mac is ${this.data.host_arch}; these run slowly under emulation`)}</div></button>
+      <button class="stat ${emu.length ? "attention" : ""}" data-seg="im" data-val="emule"><div class="stat-label">${icon("cpu")}${L("Başka işlemci için", "For another CPU")}</div><div class="stat-value">${emu.length}</div><div class="stat-foot">${L(`${archWho()} ${this.data.host_arch}; bunlar emülasyonla, yavaş çalışır`, `${archWho()} ${this.data.host_arch}; these run slowly under emulation`)}</div></button>
       <div class="stat"><div class="stat-label">${icon("update")}${L("Yeni sürümü olan", "With updates")}</div><div class="stat-value">${newer.length}</div><div class="stat-foot">${newer.length ? newer.slice(0, 2).map((i) => i.ref).join(", ") : L("Denetlemek için üstteki düğme", "Use the button above to check")}</div></div>`);
     patch($("#im-filter", this.root), segmented("im", [
       { id: "hepsi", label: L("Tümü", "All"), count: imgs.length },
       { id: "kullanilan", label: L("Kullanılan", "In use"), count: imgs.filter((i) => i.in_use).length },
       { id: "kullanilmayan", label: L("Kullanılmayan", "Unused"), count: imgs.filter((i) => !i.in_use && !i.dangling).length },
       { id: "sahipsiz", label: L("Sahipsiz", "Dangling"), count: imgs.filter((i) => i.dangling).length },
-      emu.length ? { id: "emule", label: "Intel", count: emu.length } : null,
+      emu.length ? { id: "emule", label: L("Emülasyonla", "Emulated"), count: emu.length } : null,
     ].filter(Boolean), this.filter));
 
     const groups = this.groups();
@@ -258,7 +258,7 @@ const ImagesView = {
           <div class="min0">
             <div class="ellipsis">${tag}</div>
             <div class="small muted">
-              ${im.emulated ? html`<span class="pill warn" title="${L(`Mac'in ${this.data.host_arch}; bu kalıp ${im.arch} için. Emülasyonla, yavaş çalışır.`, `Your Mac is ${this.data.host_arch}; this image is for ${im.arch}. It runs slowly under emulation.`)}">${icon("cpu")}${im.arch} · ${L("emülasyon", "emulated")}</span>` : html`<span class="mono">${im.arch}</span>`}
+              ${im.emulated ? html`<span class="pill warn" title="${L(`${archWho()} ${this.data.host_arch}; bu kalıp ${im.arch} için. Emülasyonla, yavaş çalışır.`, `${archWho()} ${this.data.host_arch}; this image is for ${im.arch}. It runs slowly under emulation.`)}">${icon("cpu")}${im.arch} · ${L("emülasyon", "emulated")}</span>` : html`<span class="mono">${im.arch}</span>`}
               ${im.local_build ? html` · <span>${L("yerelde derlendi", "built locally")}</span>` : ""}
             </div>
           </div>

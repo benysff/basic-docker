@@ -67,8 +67,34 @@ def _build_env():
 
 
 ENV = _build_env()
+_tls = threading.local()
+
+
+def cur_env():
+    """Docker komutlarının kullanacağı ortam. Bir iş başlarken o anki ortam (hangi sunucu) sabitlenir:
+    iş sürerken kullanıcı başka sunucuya geçse de işin kalan komutları başladığı yerde çalışır.
+    ENV hiç yerinde değiştirilmez, değişince yenisiyle değiştirilir (remote.py)."""
+    return getattr(_tls, "env", None) or ENV
 DOCKER = shutil.which("docker", path=ENV["PATH"])
 IS_MAC = sys.platform == "darwin"
+
+# "Bu Mac" yalnızca Mac'te; Windows/Linux'ta "bu bilgisayar". Türkçe ekler kelimeye göre değiştiği için
+# her biçim ayrı yazılır: here("te") → "bu Mac'te" / "bu bilgisayarda".
+_HERE = {
+    True: {"": "bu Mac", "te": "bu Mac'te", "e": "bu Mac'e", "ten": "bu Mac'ten", "teki": "bu Mac'teki", "in": "bu Mac'in"},
+    False: {"": "bu bilgisayar", "te": "bu bilgisayarda", "e": "bu bilgisayara", "ten": "bu bilgisayardan",
+            "teki": "bu bilgisayardaki", "in": "bu bilgisayarın"},
+}
+
+
+def here(form="", cap=False):
+    s = _HERE[IS_MAC][form]
+    return s[0].upper() + s[1:] if cap else s
+
+
+def here_en(cap=False):
+    s = "this Mac" if IS_MAC else "this computer"
+    return s[0].upper() + s[1:] if cap else s
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07")
 NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$")
@@ -112,7 +138,7 @@ def docker(*args, timeout=30, cwd=None):
             errors="replace",
             timeout=timeout,
             cwd=cwd,
-            env=ENV,
+            env=cur_env(),
         )
         return p.returncode, p.stdout, p.stderr
     except subprocess.TimeoutExpired:
@@ -826,8 +852,10 @@ def start_job(title, app_key, fn, *args):
             raise UserError(L("Bu uygulamada zaten bir işlem sürüyor, bitmesini bekle.", "Something is already running for this app; wait for it to finish."))
         job = Job(title, app_key)
         JOBS[job.id] = job
+    env = dict(cur_env())  # işin hedefi, iş başladığı andaki sunucu olarak sabitlenir
 
     def runner():
+        _tls.env = env
         try:
             job.message = fn(job, *args) or L("Tamamlandı.", "Done.")
             job.status = "bitti"
@@ -871,7 +899,7 @@ def _stream(job, args, cwd=None, timeout=None):
         encoding="utf-8",
         errors="replace",
         cwd=cwd,
-        env=ENV,
+        env=cur_env(),
     )
     timer = None
     if timeout:
@@ -990,20 +1018,34 @@ def _remove_containers(job, containers, with_data):
     if with_data:
         volumes = sorted({m["name"] for c in containers for m in c["mounts"]
                           if m["type"] == "volume" and not m["anonymous"]})
+        failed = []
         for v in volumes:
             code, _, err = docker("volume", "rm", v, timeout=60)
             job.log(L(f"Veri kutusu silindi: {v}", f"Volume deleted: {v}") if code == 0
                     else L(f"Veri kutusu silinemedi ({v}): ", f"Could not delete volume ({v}): ") + err.strip())
+            if code != 0:
+                failed.append(v)
+        return failed
+    return []
+
+
+def _kept_note(failed):
+    """Silinemeyen veri kutuları varsa sonuç mesajına eklenecek not ("hepsi silindi" demeyelim)."""
+    if not failed:
+        return ""
+    return L(f" Ama şu veri kutuları silinemedi: {', '.join(failed)}.", f" But these volumes could not be deleted: {', '.join(failed)}.")
 
 
 def _delete_app(job, app, with_data):
     key = app["key"]
-    _remove_containers(job, app["containers"], with_data)
+    failed = _remove_containers(job, app["containers"], with_data)
     if not key.startswith(SINGLE_PREFIX) and key != SYSTEM_KEY:
         for label in (f"com.docker.compose.project={key}", f"basicdocker.app={key}"):
             _, out, _ = docker("network", "ls", "-q", "--filter", f"label={label}")
             for net in out.split():
-                docker("network", "rm", net, timeout=30)
+                code, _, err = docker("network", "rm", net, timeout=30)
+                if code != 0:
+                    job.log(L(f"Ağ silinemedi ({net}): ", f"Could not delete network ({net}): ") + err.strip()[-200:])
 
     def clean(s):
         for section in ("adlar", "notlar", "projeler"):
@@ -1012,6 +1054,8 @@ def _delete_app(job, app, with_data):
             del s["eslestirme"][cname]
 
     update_settings(clean)
+    if with_data and failed:
+        return L("Silindi.", "Deleted.") + _kept_note(failed)
     return L("Silindi.", "Deleted.") + (L(" Veriler de silindi.", " Data deleted too.") if with_data
                                         else L(" Veriler (veri kutuları) korundu.", " Data (volumes) kept."))
 
@@ -1108,9 +1152,9 @@ def container_action(cid, action, with_data=False):
         elif action == "oldur":
             code = _stream(job, ["kill", name], timeout=60)
         elif action == "sil":
-            _remove_containers(job, [c], with_data)
+            failed = _remove_containers(job, [c], with_data)
             update_settings(lambda s: s["eslestirme"].pop(name, None))
-            return L("Parça silindi.", "Container deleted.")
+            return L("Parça silindi.", "Container deleted.") + _kept_note(failed)
         else:
             raise UserError(L("Bilinmeyen işlem.", "Unknown action."))
         if code != 0:
@@ -1144,9 +1188,9 @@ def bulk_container_action(ids, action, with_data=False):
     def run(job):
         failed = []
         if action == "sil":
-            _remove_containers(job, targets, with_data)
+            kept = _remove_containers(job, targets, with_data)
             update_settings(lambda s: [s["eslestirme"].pop(c["name"], None) for c in targets])
-            return L(f"{len(targets)} parça silindi.", f"{len(targets)} container(s) deleted.")
+            return L(f"{len(targets)} parça silindi.", f"{len(targets)} container(s) deleted.") + _kept_note(kept)
         if action == "baslat":
             todo = [c for c in targets if not c["up"] or c["state"] == "paused"]
         else:
@@ -1197,7 +1241,7 @@ def logs(cid, tail=400):
         p = subprocess.run(
             [DOCKER, "logs", "--tail", str(int(tail)), c["name"]],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, encoding="utf-8", errors="replace", timeout=20, env=ENV,
+            text=True, encoding="utf-8", errors="replace", timeout=20, env=cur_env(),
         )
         return strip_ansi(p.stdout)
     except subprocess.TimeoutExpired:
@@ -1298,7 +1342,7 @@ def exec_command(cid, command, timeout=30):
         p = subprocess.run(
             [DOCKER, "exec", c["name"], "sh", "-c", command],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-            text=True, encoding="utf-8", errors="replace", timeout=timeout, env=ENV,
+            text=True, encoding="utf-8", errors="replace", timeout=timeout, env=cur_env(),
         )
     except subprocess.TimeoutExpired as e:
         out = e.stdout if isinstance(e.stdout, str) else (e.stdout or b"").decode("utf-8", "replace")
@@ -1335,7 +1379,7 @@ def app_logs(key, tail=300):
             p = subprocess.run(
                 [DOCKER, "logs", "--timestamps", "--tail", str(tail), c["name"]],
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, encoding="utf-8", errors="replace", timeout=20, env=ENV,
+                text=True, encoding="utf-8", errors="replace", timeout=20, env=cur_env(),
             )
         except subprocess.TimeoutExpired:
             continue
@@ -1359,7 +1403,7 @@ def logs_ex(cid, tail=500, timestamps=False, since=""):
     args.append(c["name"])
     try:
         p = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                           text=True, encoding="utf-8", errors="replace", timeout=25, env=ENV)
+                           text=True, encoding="utf-8", errors="replace", timeout=25, env=cur_env())
     except subprocess.TimeoutExpired:
         raise UserError(L("Kayıtlar zamanında okunamadı.", "Could not read the logs in time."))
     return strip_ansi(p.stdout)
@@ -1591,7 +1635,17 @@ def create_from_template(template_id, app_key, new_name):
             chosen.append(f"{catalog.port_label(p)}: localhost:{host}")
             args += ["-p", f"127.0.0.1:{host}:{p['container']}"]
         if t.get("data"):
-            args += ["-v", f"{name}-veri:{t['data']}"]
+            volume = f"{name}-veri"
+            if any("{sifre}" in v for v in t["env"].values()) and docker("volume", "inspect", volume, timeout=15)[0] == 0:
+                # Önceki kurulumdan kalmış kutu: veritabanı eski şifreyi kullanır, yeni üretilen şifre işe yaramaz
+                # ve gösterilen bağlantı bilgisi yanlış olur. Eski kutuya dokunmadan yenisini aç.
+                old, i = volume, 2
+                while docker("volume", "inspect", f"{name}-veri-{i}", timeout=15)[0] == 0:
+                    i += 1
+                volume = f"{name}-veri-{i}"
+                job.log(L(f"Önceki kurulumdan kalan “{old}” kutusu korunuyor; yeni veriler “{volume}” kutusuna yazılacak.",
+                          f"The “{old}” volume from a previous install is kept; new data goes into “{volume}”."))
+            args += ["-v", f"{volume}:{t['data']}"]
         for k, v in t["env"].items():
             args += ["-e", f"{k}={v.format(sifre=password, db=db_name)}"]
         args.append(t["image"])
@@ -1649,7 +1703,7 @@ def create_custom(image, role, app_key, new_name, container_port, host_port, env
                 "--label", f"basicdocker.app={key}", "--label", f"basicdocker.role={role}"]
         if cport:
             host = hport or pick_port(cport if cport >= 1024 else 8080, taken)
-            if hport and (hport in taken or not _port_free(hport)):
+            if hport and (hport in taken or (not is_remote_engine() and not _port_free(hport))):
                 raise UserError(L(f"{hport} numaralı kapı dolu. Başka bir sayı dene ya da boş bırak.",
                                   f"Port {hport} is taken. Try another number or leave it empty."))
             args += ["-p", f"127.0.0.1:{host}:{cport}"]
@@ -1672,7 +1726,7 @@ COMPOSE_NAMES = ["compose.yaml", "compose.yml", "docker-compose.yaml", "docker-c
 
 
 def _compose_target(path):
-    path = os.path.realpath(os.path.expanduser((path or "").strip()))
+    path = os.path.realpath(os.path.expanduser((path or "").strip().strip('"').strip("'")))
     if os.path.isfile(path):
         return os.path.dirname(path), path
     if os.path.isdir(path):
@@ -1771,6 +1825,9 @@ def open_terminal(name):
     return None
 
 
+_DD_WIN_EXE = os.path.expandvars(r"%ProgramFiles%\Docker\Docker\Docker Desktop.exe")
+
+
 def engine_kind():
     """Hangi Docker motoru kullanılıyor: 'orbstack', 'docker-desktop', 'colima' ya da 'diger'."""
     endpoint = ""
@@ -1786,8 +1843,13 @@ def engine_kind():
         return "orbstack"
     if "colima" in endpoint:
         return "colima"
-    if ".docker/run" in endpoint or "docker.raw.sock" in endpoint:
+    if ".docker/run" in endpoint or "docker.raw.sock" in endpoint or ".docker/desktop" in endpoint:
         return "docker-desktop"
+    if endpoint.startswith("npipe:"):
+        # Windows: Docker Desktop'ın boruları (dockerDesktopLinuxEngine / docker_engine)
+        if "dockerDesktop" in endpoint or os.path.exists(_DD_WIN_EXE):
+            return "docker-desktop"
+        return "diger"
     if IS_MAC:
         has_orb = os.path.isdir("/Applications/OrbStack.app")
         has_dd = os.path.isdir("/Applications/Docker.app")
@@ -1795,6 +1857,8 @@ def engine_kind():
             return "orbstack"
         if has_dd and not has_orb:
             return "docker-desktop"
+    if IS_WIN and os.path.exists(_DD_WIN_EXE):
+        return "docker-desktop"
     return "diger"
 
 
@@ -1812,10 +1876,11 @@ def start_docker_desktop():
         subprocess.Popen(["open", "-a", app])
         name = ENGINE_NAMES.get(kind if kind != 'diger' else 'docker-desktop')
         return L(f"{name} açılıyor… Bu 10-30 saniye sürebilir.", f"Opening {name}… This can take 10-30 seconds.")
-    if sys.platform.startswith("win"):
-        path = os.path.expandvars(r"%ProgramFiles%\Docker\Docker\Docker Desktop.exe")
-        if os.path.exists(path):
-            subprocess.Popen([path])
-            return L("Docker açılıyor… Bu 20-30 saniye sürebilir.", "Opening Docker… This can take 20-30 seconds.")
+    if IS_WIN:
+        if os.path.exists(_DD_WIN_EXE):
+            subprocess.Popen([_DD_WIN_EXE])
+            return L("Docker Desktop açılıyor… Bu 20-30 saniye sürebilir.", "Opening Docker Desktop… This can take 20-30 seconds.")
+        raise UserError(L("Docker Desktop bulunamadı. Kurduysan Başlat menüsünden aç; kurmadıysan docker.com'dan indir.",
+                          "Docker Desktop wasn't found. If it's installed, open it from the Start menu; otherwise download it from docker.com."))
     raise UserError(L("Docker'ı kendin başlatman gerekiyor (Linux: sudo systemctl start docker).",
                       "You need to start Docker yourself (Linux: sudo systemctl start docker)."))

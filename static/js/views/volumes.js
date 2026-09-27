@@ -102,9 +102,9 @@ const VolumesView = {
   volMenu(v) {
     const dbUser = v.used_by.find((u) => u.kind === "db" && u.running);
     return [
-      { label: L("Yedek al (.tar.gz)", "Back up (.tar.gz)"), icon: "archive", onClick: () => runJob("/api/kutu/yedekle", { ad: v.name }, () => this.loadBackups()) },
-      dbUser && { label: L("Veritabanı dökümü al (daha güvenli)", "Take a database dump (safer)"), icon: "backup", onClick: () => runJob("/api/db/dokum", { id: dbUser.id }, () => this.loadBackups()) },
-      { label: L("Bir yedeği bu kutuya geri yükle…", "Restore a backup into this volume…"), icon: "upload", onClick: () => this.pickBackupFor(v) },
+      { label: L("Yedek al (.tar.gz)", "Back up (.tar.gz)"), icon: "archive", unsafe: true, onClick: () => runJob("/api/kutu/yedekle", { ad: v.name }, () => this.loadBackups()) },
+      dbUser && { label: L("Veritabanı dökümü al (daha güvenli)", "Take a database dump (safer)"), icon: "backup", unsafe: true, onClick: () => runJob("/api/db/dokum", { id: dbUser.id }, () => this.loadBackups()) },
+      { label: L("Bir yedeği bu kutuya geri yükle…", "Restore a backup into this volume…"), icon: "upload", unsafe: true, onClick: () => this.pickBackupFor(v) },
       { label: L("Adını kopyala", "Copy name"), icon: "copy", onClick: () => copyText(v.name) },
       "-",
       { label: v.in_use ? L("Sil (önce kullanan parçaları sil)", "Delete (delete the containers using it first)") : L("Sil…", "Delete…"), icon: "trash", danger: true, disabled: v.in_use, onClick: () => this.remove(v) },
@@ -154,9 +154,12 @@ const VolumesView = {
 
   async removeBackup(b) {
     const r = await confirmDialog({
-      title: L("Yedek silinsin mi?", "Delete this backup?"), danger: true, confirmText: L("Çöp Sepeti'ne taşı", "Move to Trash"), icon: "trash",
-      text: L(`${b.file} Çöp Sepeti'ne taşınacak. Çöp Sepeti'ni boşaltana kadar geri alabilirsin.`,
-        `${b.file} will be moved to the Trash. You can get it back until you empty the Trash.`),
+      title: L("Yedek silinsin mi?", "Delete this backup?"), danger: true, confirmText: trashVerb(), icon: "trash",
+      text: onMac() ? L(`${b.file} Çöp Sepeti'ne taşınacak. Çöp Sepeti'ni boşaltana kadar geri alabilirsin.`,
+          `${b.file} will be moved to the Trash. You can get it back until you empty the Trash.`)
+        : onWin() ? L(`${b.file} Geri Dönüşüm Kutusu'na taşınacak. Kutuyu boşaltana kadar geri alabilirsin.`,
+          `${b.file} will be moved to the Recycle Bin. You can get it back until you empty it.`)
+        : L(`${b.file} kalıcı olarak silinecek. Geri alınamaz.`, `${b.file} will be deleted permanently. This can't be undone.`),
     });
     if (!r) return;
     try { flash((await api("/api/yedek/sil", { dosya: b.path })).mesaj); this.loadBackups(); } catch (e) { flash(e.message, true); }
@@ -166,7 +169,7 @@ const VolumesView = {
     try {
       const r = await api("/api/dosya-sec", {});
       if (!r.yol) return;
-      const name = r.yol.split("/").pop();
+      const name = r.yol.split(/[\\/]/).pop();  // Windows yolları \\ ile ayrılır
       const isVol = /\.(tar\.gz|tgz|tar)$/.test(name);
       const b = { path: r.yol, file: name, kind: isVol ? "volume" : "db", source: name.split("__")[0], ext: name.split(".").slice(1).join(".") };
       isVol ? openRestoreVolume(b, this.vols || []) : openRestoreDb(b);
@@ -197,9 +200,9 @@ const VolumesView = {
       { id: "sahipsiz", label: L("Sahipsiz", "Orphaned"), count: vols.filter((v) => !v.in_use).length },
     ], this.filter));
 
-    const qq = this.query.trim().toLocaleLowerCase(loc());
+    const qq = fold(this.query.trim());
     let list = vols;
-    if (qq) list = list.filter((v) => [v.name, v.app_name, ...v.used_by.map((u) => u.name)].join(" ").toLocaleLowerCase(loc()).includes(qq));
+    if (qq) list = list.filter((v) => fold([v.name, v.app_name, ...v.used_by.map((u) => u.name)].join(" ")).includes(qq));
     if (this.filter === "kullanilan") list = list.filter((v) => v.in_use);
     if (this.filter === "sahipsiz") list = list.filter((v) => !v.in_use);
     if (!list.length) return patch(body, emptyState({ icon: "drive", title: L("Eşleşen veri kutusu yok", "No matching volumes"), compact: true }));
@@ -223,7 +226,7 @@ const VolumesView = {
               <td class="num mono small">${v.size === null ? "—" : fmt.bytes(v.size)}</td>
               <td class="col-lg small muted">${fmt.ago(v.created)}</td>
               <td class="actions-col"><div class="row-actions">
-                <button class="btn sm" data-vol="backup" data-name="${v.name}" title="${L("İçeriği .tar.gz olarak Mac'ine kaydet", "Save its contents to your Mac as .tar.gz")}">${icon("archive")}${L("Yedekle", "Back up")}</button>
+                <button class="btn sm" data-vol="backup" data-name="${v.name}" title="${L(`İçeriği .tar.gz olarak ${here("ine")} kaydet`, `Save its contents to ${yourPcEn()} as .tar.gz`)}">${icon("archive")}${L("Yedekle", "Back up")}</button>
                 <button class="icon-btn sm" data-vol="menu" data-name="${v.name}" aria-label="${L("Diğer işlemler", "More actions")}" aria-haspopup="menu">${icon("more")}</button>
               </div></td>
             </tr>`)}</tbody>
@@ -242,7 +245,7 @@ const VolumesView = {
           <div class="min0"><div class="muted small">${L("Yedeklerin durduğu klasör", "Backups folder")}</div><div class="mono ellipsis" title="${b.root}">${b.root}</div></div>
         </div>
         <div class="row-actions">
-          <button class="btn sm" data-open-root>${icon("folder")}${L("Finder'da aç", "Open in Finder")}</button>
+          <button class="btn sm" data-open-root>${icon("folder")}${openInFiles()}</button>
           <button class="btn sm" data-change-root>${L("Değiştir…", "Change…")}</button>
         </div>
       </div>
@@ -259,15 +262,15 @@ const VolumesView = {
                 <td class="num mono small">${fmt.bytes(x.size)}</td>
                 <td class="actions-col"><div class="row-actions">
                   <button class="btn sm" data-bk="restore" data-path="${x.path}">${icon("upload")}${L("Geri yükle", "Restore")}</button>
-                  <button class="icon-btn sm" data-bk="reveal" data-path="${x.path}" aria-label="${L("Finder'da göster", "Show in Finder")}" title="${L("Finder'da göster", "Show in Finder")}">${icon("folder")}</button>
-                  <button class="icon-btn sm" data-bk="delete" data-path="${x.path}" aria-label="${L("Çöp Sepeti'ne taşı", "Move to Trash")}" title="${L("Çöp Sepeti'ne taşı", "Move to Trash")}">${icon("trash")}</button>
+                  <button class="icon-btn sm" data-bk="reveal" data-path="${x.path}" aria-label="${showInFiles()}" title="${showInFiles()}">${icon("folder")}</button>
+                  <button class="icon-btn sm" data-bk="delete" data-path="${x.path}" aria-label="${trashVerb()}" title="${trashVerb()}">${icon("trash")}</button>
                 </div></td>
               </tr>`)}</tbody>
           </table>
         </div>` : emptyState({
           icon: "archive", title: L("Henüz yedek yok", "No backups yet"),
-          text: L(`${T("volume", true)} sekmesinde “Yedekle”ye bas ya da bir veritabanı parçasında “Veritabanı dökümü al”ı seç. Yedekler Mac'inde, yukarıdaki klasörde durur.`,
-            "Press “Back up” on the Volumes tab, or choose “Take a database dump” on a database container. Backups are kept on your Mac, in the folder above."),
+          text: L(`${T("volume", true)} sekmesinde “Yedekle”ye bas ya da bir veritabanı parçasında “Veritabanı dökümü al”ı seç. Yedekler ${here("inde")}, yukarıdaki klasörde durur.`,
+            `Press “Back up” on the Volumes tab, or choose “Take a database dump” on a database container. Backups are kept on ${yourPcEn()}, in the folder above.`),
         })}
       ${callout({ level: "tip", title: L("Hangi yedek ne zaman?", "Which backup when?"), text: isEN()
         ? raw("A <b>volume backup</b> archives every file in the volume as is; it works for any container. A <b>database dump</b> is taken with the database's own tool; it is consistent even while running and is the only safe way to move to another version.")
