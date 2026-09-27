@@ -74,7 +74,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: python
         run: |
-          import os, subprocess, tempfile
+          import os, subprocess, sys, tempfile
+          sys.path.insert(0, os.getcwd())  # betik geçici klasörden çalışır; proje modülleri çalışma klasöründe
           import docker_service as ds, backups as bk, resources as rs, app
           assert ds.here("te") == "bu bilgisayarda" and ds.here_en() == "this computer", "Windows'ta 'bu bilgisayar' denmeli"
           # Yedek silme: Geri Dönüşüm Kutusu'na (geri alınabilir)
