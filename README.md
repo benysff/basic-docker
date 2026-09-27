@@ -2,7 +2,7 @@
 
 **Türkçe** · [English](README.en.md)
 
-**Docker'ı mala anlatır gibi yöneten, Mac'e özel (native) uygulama.**
+**Docker'ı mala anlatır gibi yöneten masaüstü uygulaması.** Mac için yazıldı (native); Windows sürümü deneysel.
 5 konteynerli bir proje ekranda tek kart olarak görünür. Tek tuşla hepsi açılır, tek tuşla hepsi kapanır.
 Bir şey bozulunca da **neden bozulduğunu sade Türkçeyle söyler.**
 
@@ -65,6 +65,21 @@ Arayüz **Türkçe ve İngilizce**; dili Sistem sayfasından ya da ⌘K → "Swi
 
 ## Kurulum
 
+### İndir (en kolayı)
+
+[Releases](https://github.com/benysff/basic-docker/releases/latest) sayfasından bilgisayarına uygun dosyayı indir:
+
+| Bilgisayar | Dosya |
+|---|---|
+| Mac (M1/M2/M3/M4…) | `Basic-Docker-macOS-AppleSilicon.zip` |
+| Mac (Intel) | `Basic-Docker-macOS-Intel.zip` |
+| Windows 10/11 (deneysel) | `Basic-Docker-Windows.zip` |
+
+Python gerekmez; her şey paketin içinde. Uygulama imzalı olmadığı için Mac ilk açılışta uyarır:
+Sistem Ayarları → Gizlilik ve Güvenlik → **Yine de Aç**. Windows'ta SmartScreen uyarırsa **Ek bilgi → Yine de çalıştır**.
+
+### Kaynaktan kur (Mac)
+
 Gerekenler: **macOS 11+**, **Python 3.9+** (macOS'ta hazır gelir) ve bir Docker motoru:
 **[OrbStack](https://orbstack.dev)** (Mac için en hafifi) ya da **[Docker Desktop](https://www.docker.com/products/docker-desktop/)**.
 
@@ -114,7 +129,7 @@ sen istediğinde çıkar (kalıp indirme, güncelleme denetimi).
 ## Nasıl çalışır?
 
 Basic Docker bir Python uygulamasıdır. Arayüzü [pywebview](https://pywebview.flowrl.com/) ile native bir macOS
-penceresinde (WKWebView) açar. Web sunucusu ya da port kullanmaz: arayüz Python fonksiyonlarını doğrudan çağırır.
+penceresinde (WKWebView; Windows'ta WebView2) açar. Web sunucusu ya da port kullanmaz: arayüz Python fonksiyonlarını doğrudan çağırır.
 Docker ile sadece `docker` komut satırı aracı üzerinden konuşur.
 
 Konteynerleri şu sırayla gruplar:
@@ -136,7 +151,8 @@ Konteynerleri şu sırayla gruplar:
 | `monitor.py` | Arka planda canlı kaynak kullanımı ve etkinlik geçmişi (çökme bildirimi) |
 | `catalog.py` | Hazır parça listesi |
 | `static/` | Arayüz: `css/` (tasarım belirteçleri, bileşenler) ve `js/` (her sayfa `views/` altında ayrı dosya), `vendor/xterm/` (xterm.js 6, MIT, internetsiz çalışsın diye dahil) |
-| `kur.command`, `setup.py` | Kurulum ve `.app` paketi |
+| `kur.command`, `setup.py` | Kaynaktan kurulum ve `.app` paketi (Mac) |
+| `basic-docker.spec`, `.github/workflows/surum.yml` | İndirilebilir paketler (PyInstaller): Mac ve Windows için derler, sürüm etiketinde Release'e ekler |
 
 Ayarlar (görünen adlar, notlar, elle gruplamalar, setler, tercihler) `~/.basic-docker/ayarlar.json`,
 etkinlik geçmişi `~/.basic-docker/etkinlik.jsonl` dosyasında durur.
@@ -153,6 +169,9 @@ etkinlik geçmişi `~/.basic-docker/etkinlik.jsonl` dosyasında durur.
 - `index.html`'de andığın bütün `css/` ve `js/` dosyaları açılışta tek sayfaya gömülür; derleme adımı yok.
 - Arayüz metinleri iki dilde yazılır: JavaScript'te `L("Türkçe", "English")`, Python'da `ds.L("Türkçe", "English")`.
   Hazır parçaların İngilizcesi `catalog.py`'de `_en` ile biten alanlarda durur.
+- Yeni sürüm çıkarmak: `app.py`'deki `VERSION`'ı ve `.github/SURUM_NOTLARI.md`'yi güncelle, main'e gelince
+  `git tag v2.1.0 && git push origin v2.1.0`. GitHub Actions Mac (Apple Silicon, Intel) ve Windows paketlerini
+  derler, dener ve Release sayfasına ekler. PR'larda da derlenir; paketler Actions sayfasında indirilebilir.
 
 ## Lisans
 

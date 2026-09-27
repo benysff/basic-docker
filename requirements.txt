@@ -1,5 +1,7 @@
 # Uygulamanın kendisi
 pywebview>=5
+# Windows'ta uygulama içi terminal için (ConPTY)
+pywinpty>=2.0; sys_platform == "win32"
 # macOS .app paketi üretmek için (kur.command kullanır)
 py2app>=0.28; sys_platform == "darwin"
 setuptools<81; sys_platform == "darwin"

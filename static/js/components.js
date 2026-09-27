@@ -147,7 +147,7 @@ function copyBtn(text, label = L("Kopyala", "Copy"), cls = "sm") {
 }
 
 function kbd(keys) {
-  return html`<span class="kbd-group">${keys.split("+").map((k) => html`<kbd>${k}</kbd>`)}</span>`;
+  return html`<span class="kbd-group">${modText(keys).split("+").map((k) => html`<kbd>${k}</kbd>`)}</span>`;
 }
 
 /** Kayıt satırlarını renklendirir (hata kırmızı, uyarı sarı). */

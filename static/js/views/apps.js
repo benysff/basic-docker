@@ -98,7 +98,7 @@ const AppsView = {
           desc: L("Her kart bir uygulama: birlikte çalışan parçaların grubu. Tek tuşla aç, tek tuşla kapat.",
             "Each card is an app: a group of containers that work together. Start and stop them with one click."),
           actions: html`<button class="btn" data-global="sunucu-ekle" title="${L("Uzak bir sunucudaki Docker'ı ekle", "Add Docker on a remote server")}">${icon("globe")}${L("Sunucu ekle", "Add server")}</button>
-            <button class="btn primary" data-global="yeni" title="${L("Yeni ekle (⌘N)", "Add new (⌘N)")}">${icon("plus")}${L("Yeni ekle", "Add new")}</button>`,
+            <button class="btn primary" data-global="yeni" title="${modText(L("Yeni ekle (⌘N)", "Add new (⌘N)"))}">${icon("plus")}${L("Yeni ekle", "Add new")}</button>`,
         })}
         <div id="apps-intro"></div>
         <section class="stat-row" id="apps-stats" aria-label="${L("Özet", "Summary")}"></section>
@@ -198,10 +198,10 @@ const AppsView = {
           <h2>${L("Nasıl çalışır?", "How does it work?")}</h2>
           ${isEN() ? html`<p>Each card is an <b>app</b>. An app is made of a few <b>containers</b> that work together.
             For example, a website = site + database + mailbox. Press <b>Start</b> and they all start together;
-            press <b>Stop</b> and they all stop. Click a card for details. Press <b>⌘K</b> to search anywhere.</p>`
+            press <b>Stop</b> and they all stop. Click a card for details. Press <b>${modText("⌘K")}</b> to search anywhere.</p>`
           : html`<p>Her kart bir <b>uygulama</b>. Bir uygulama, birlikte çalışan birkaç <b>parçadan</b> (konteyner) oluşur.
             Örneğin bir web sitesi = site + veritabanı + e-posta kutusu. <b>Başlat</b>'a basınca hepsi birlikte açılır,
-            <b>Durdur</b>'a basınca hepsi kapanır. Ayrıntılar için karta tıkla. Her yerde arama için <b>⌘K</b>.</p>`}
+            <b>Durdur</b>'a basınca hepsi kapanır. Ayrıntılar için karta tıkla. Her yerde arama için <b>${modText("⌘K")}</b>.</p>`}
         </div>
         <button class="icon-btn" data-intro-close aria-label="${L("Tanıtımı kapat", "Hide intro")}" title="${L("Kapat", "Close")}">${icon("close")}</button>
       </div>`);

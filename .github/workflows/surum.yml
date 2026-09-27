@@ -1,0 +1,121 @@
+# İndirilebilir paketler: macOS (Apple Silicon ve Intel) ve Windows (deneysel).
+#  - PR'larda: paketler derlenir ve denenir (Actions sayfasında "Artifacts" olarak indirilebilir).
+#  - v ile başlayan bir etiket atılınca (ör. v2.1.0): paketler o sürümün Release sayfasına eklenir.
+#    Sürüm notu .github/SURUM_NOTLARI.md dosyasından alınır.
+name: Sürüm paketleri
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "**.py"
+      - "static/**"
+      - "assets/**"
+      - "requirements.txt"
+      - "basic-docker.spec"
+      - ".github/workflows/surum.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  derle:
+    name: ${{ matrix.ad }}
+    runs-on: ${{ matrix.os }}
+    env:
+      PYTHONUTF8: "1"  # Windows konsolu cp1252; Türkçe çıktı yazarken hata vermesin
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ad: macOS (Apple Silicon)
+            os: macos-15
+            dosya: Basic-Docker-macOS-AppleSilicon.zip
+          - ad: macOS (Intel)
+            os: macos-15-intel
+            dosya: Basic-Docker-macOS-Intel.zip
+          - ad: Windows (deneysel)
+            os: windows-latest
+            dosya: Basic-Docker-Windows.zip
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Gerekenleri kur
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt "pyinstaller>=6.10"
+
+      - name: Windows terminali (ConPTY) çalışıyor mu?
+        if: runner.os == 'Windows'
+        shell: python
+        run: |
+          import os, time
+          from winpty import PtyProcess
+          p = PtyProcess.spawn(["cmd", "/c", "echo merhaba-terminal"], dimensions=(24, 80), env=dict(os.environ))
+          p.setwinsize(30, 100)
+          out, end = "", time.time() + 15
+          while time.time() < end and "merhaba-terminal" not in out:
+              try:
+                  out += p.read(4096)
+              except EOFError:
+                  break
+          while p.isalive() and time.time() < end:
+              time.sleep(0.2)
+          print(repr(out[-200:]), "çıkış:", p.exitstatus)
+          assert "merhaba-terminal" in out, "terminal çıktısı okunamadı"
+
+      - name: Paketle
+        run: pyinstaller --noconfirm basic-docker.spec
+
+      - name: Paketi dene (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          "dist/Basic Docker.app/Contents/MacOS/Basic Docker" --kendini-dene deneme.json
+          cat deneme.json
+          ditto -c -k --keepParent "dist/Basic Docker.app" "${{ matrix.dosya }}"
+
+      - name: Paketi dene (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "dist/Basic Docker/Basic Docker.exe" -ArgumentList "--kendini-dene", "deneme.json" -Wait -PassThru
+          Get-Content deneme.json
+          if ($p.ExitCode -ne 0) { throw "Paket denemesi başarısız (çıkış kodu $($p.ExitCode))" }
+          Compress-Archive -Path "dist/Basic Docker" -DestinationPath "${{ matrix.dosya }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.dosya }}
+          path: ${{ matrix.dosya }}
+          if-no-files-found: error
+
+  yayinla:
+    name: Release'e ekle
+    needs: derle
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # sadece bu iş Release'e yazabilir
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: paketler
+          merge-multiple: true
+      - name: Release oluştur ya da güncelle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ETIKET: ${{ github.ref_name }}
+        run: |
+          ls -la paketler
+          if gh release view "$ETIKET" >/dev/null 2>&1; then
+            gh release upload "$ETIKET" paketler/* --clobber
+          else
+            gh release create "$ETIKET" paketler/* --verify-tag --title "Basic Docker $ETIKET" --notes-file .github/SURUM_NOTLARI.md
+          fi
